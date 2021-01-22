@@ -4,14 +4,13 @@ import java.io.File
 import java.util.*
 import kotlin.collections.ArrayList
 
-import org.jgrapht.*;
+import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.graph.*;
-import org.jgrapht.traverse.*;
 
 class GraphHolder(fileName: String) {
-    val nodes: MutableList<Node> = ArrayList()
+
     val channels: MutableList<Channel> = ArrayList()
-    val g: Graph<Node, DefaultWeightedEdge> = DefaultDirectedGraph(DefaultWeightedEdge::class.java)
+    private val g = ChannelNetwork()
 
     init {
         val resourceName = this::class.java.classLoader.getResource(fileName)!!.file
@@ -19,8 +18,10 @@ class GraphHolder(fileName: String) {
         val nOfNodes = graphFileReader.nextInt()
         graphFileReader.nextLine()
 
+        val nodes: Array<Node?> = arrayOfNulls(nOfNodes)
+
         for (i in 0 until nOfNodes) {
-            nodes.add(Node(i))
+            nodes[i] = g.addVertex()
         }
 
         val edgePattern = "\\d-\\d"
@@ -28,22 +29,57 @@ class GraphHolder(fileName: String) {
             val edgeString = graphFileReader.next(edgePattern)
             val nodeIds = edgeString.split("-").map { it.toInt() }
 
-            val n1 = this.nodes[nodeIds[0]]
-            val n2 = this.nodes[nodeIds[1]]
-
-            val chan = Channel(n1, n2)
-
-            n1.addChannel(chan)
-            n2.addChannel(chan)
-            channels.add(chan)
+            g.addChannel(nodes[nodeIds[0]]!!, nodes[nodeIds[1]]!!, 5, 5)
         }
 
-        println(nodes)
-        println(channels)
-        println(nodes[0].neighbours)
+        nodes[4]!!.startPayment(2, nodes[1]!!)
+        //startPayment(2, nodes[4]!!, nodes[1]!!)
+//        startPayment(2, nodes[4]!!, nodes[1]!!)
+//        startPayment(2, nodes[4]!!, nodes[1]!!)
     }
 
-    fun startTransaction(amount: Int, sender: Node, receiver: Node) {
+    fun startPayment(amount: Int, sender: Node, receiver: Node) {
+        val paymentId: UUID = UUID.randomUUID()
+        val shortestPathDijkstra: DijkstraShortestPath<Node, DefaultWeightedEdge> = DijkstraShortestPath(g)
+
+        val path = shortestPathDijkstra.getPath(sender, receiver)
+        println("Starting tx, amount: $amount, path: ${path.edgeList}")
+
+        println("Requesting commits")
+        data class ChannelTransaction(val cha: Channel, val tx: Transaction) {}
+
+        val committedChannels = ArrayList<ChannelTransaction>()
+        try {
+            for (i in 0 until path.vertexList.size) {
+                if (path.vertexList[i] === path.endVertex) {
+                    break
+                }
+                val currentNode = path.vertexList[i]
+                val nextNode = path.vertexList[i+1]
+                val tx = Transaction(paymentId, amount, currentNode, nextNode)
+
+                val cha = g.getChannel(currentNode, nextNode)
+                if (!cha.requestTx(tx)) {
+                    throw TransactionAbortedException("Not enough balance in $cha!")
+                }
+                committedChannels.add(ChannelTransaction(cha, tx))
+            }
+        } catch (e: TransactionAbortedException) {
+            println("Aborting transaction")
+            for (chaTx in committedChannels.reversed()) {
+                chaTx.cha.abortTx(chaTx.tx)
+            }
+            throw e
+        }
+
+        println("Executing transactions")
+        for (chaTx in committedChannels.reversed()) {
+            chaTx.cha.executeTx(chaTx.tx)
+        }
+
+
+
+
 
     }
 
