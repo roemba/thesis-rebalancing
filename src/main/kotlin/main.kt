@@ -1,5 +1,8 @@
 package roemer.rebalancingGroups
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+
+@ExperimentalCoroutinesApi
 fun main(args: Array<String>) {
     println("Program has started")
 //    val n1 = Node()

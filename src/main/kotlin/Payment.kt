@@ -11,7 +11,7 @@ data class Payment(
 
 data class LocalPayment(
     val payment: Payment,
-    val fromChannel: Channel?,
-    val toChannel: Channel,
+    val fromPaymentChannel: PaymentChannel?,
+    val toPaymentChannel: PaymentChannel,
     val toTx: Transaction
 )
