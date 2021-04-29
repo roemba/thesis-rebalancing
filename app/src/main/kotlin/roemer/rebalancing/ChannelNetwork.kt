@@ -1,4 +1,4 @@
-package roemer.rebalancingGroups
+package roemer.rebalancing
 
 import org.jgrapht.graph.DefaultWeightedEdge
 import org.jgrapht.graph.SimpleDirectedWeightedGraph

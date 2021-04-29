@@ -1,4 +1,4 @@
-package roemer.rebalancingGroups
+package roemer.rebalancing
 
 class TransactionAbortedException private constructor(message: String) : Exception(message) {
     companion object {

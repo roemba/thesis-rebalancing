@@ -1,4 +1,4 @@
-package roemer.rebalancingGroups
+package roemer.rebalancing
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay

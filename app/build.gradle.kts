@@ -1,7 +1,5 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
 plugins {
-    kotlin("jvm") version "1.4.21"
+    id("org.jetbrains.kotlin.jvm") version "1.4.31"
     application
 }
 
@@ -20,14 +18,6 @@ dependencies {
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.6.0")
 }
 
-tasks.test {
-    useJUnitPlatform()
-}
-
-tasks.withType<KotlinCompile>() {
-    kotlinOptions.jvmTarget = "11"
-}
-
 application {
-    mainClassName = "MainKt"
+    mainClass.set("roemer.rebalancing.MainKt")
 }
