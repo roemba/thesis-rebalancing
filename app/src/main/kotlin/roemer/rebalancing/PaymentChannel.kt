@@ -6,10 +6,16 @@ import java.lang.IllegalArgumentException
 
 class PaymentChannel(val node1: Node, val node2: Node, var balance1: Int, var balance2: Int) {
     var totalFunds = balance1 + balance2
+        private set
     var pendingBalance1 = balance1
+        private set
     var pendingBalance2 = balance2
+        private set
     var pendingTransactions = HashSet<Transaction>()
+        private set
     private val mutex = Mutex()
+    var locked: Boolean = false
+        private set
 
     fun getOppositeNode(vertex: Node): Node {
         if (!(this.isChannelNode(vertex))) {
@@ -24,12 +30,18 @@ class PaymentChannel(val node1: Node, val node2: Node, var balance1: Int, var ba
         return vertex === this.node1 || vertex === this.node2
     }
 
-    suspend fun requestTx(tx: Transaction): Boolean {
+    suspend fun requestTx(tx: Transaction, overrideLock: Boolean = false): Boolean {
         if (!(this.isChannelNode(tx.from) && this.isChannelNode(tx.to))) {
             throw IllegalArgumentException("The given nodes do not belong to this channel!")
         }
 
         mutex.withLock {
+            if (overrideLock) {
+                this.locked = false
+            } else if (this.locked) {
+                return false
+            }
+
             if (tx in pendingTransactions) {
                 return true
             }
@@ -112,6 +124,27 @@ class PaymentChannel(val node1: Node, val node2: Node, var balance1: Int, var ba
             return false
         }
         return true
+    }
+
+    suspend fun getDemand(vertex: Node): Int {
+        mutex.withLock {
+            this.locked = true
+
+            if (this.hasOngoingTx()) {
+                throw IllegalStateException("Cannot lock channel as there are still pending transactions, check back later!")
+            }
+
+            return getCurrentDemand(vertex)
+        }
+    }
+
+    suspend fun getCurrentDemand(vertex: Node): Int {
+        val diff = (this.balance2 - this.balance1) / 2
+
+        if (vertex === this.node1) {
+            return diff * -1
+        }
+        return diff
     }
 
     override fun toString(): String {

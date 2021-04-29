@@ -35,7 +35,7 @@ class GraphHolder(fileName: String) {
                 val edgeString = graphFileReader.next(edgePattern)
                 val nodeIds = edgeString.split("-").map { it.toInt() }
 
-                g.addChannel(nodes[nodeIds[0]]!!, nodes[nodeIds[1]]!!, 5, 5)
+                g.addChannel(nodes[nodeIds[0]]!!, nodes[nodeIds[1]]!!, 5, 9)
             }
             println("Continued while nodes are waiting")
             println("\nStarting test payment 1, amount 2\n")

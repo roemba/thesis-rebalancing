@@ -7,7 +7,7 @@ import org.jgrapht.Graphs
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.graph.DefaultWeightedEdge
 
-class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
+open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
     val paymentChannels: MutableList<PaymentChannel> = ArrayList()
     val ongoingPayments: MutableMap<Payment, LocalPayment> = HashMap()
     val messageChannel = Channel<Message>(Channel.UNLIMITED)
@@ -56,10 +56,17 @@ class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
                 return
             }
 
-            when (message.type) {
-                MessageTypes.REQ_TX -> handleRequestTxMessage(message as RequestPaymentMessage)
-                MessageTypes.EXEC_TX -> handleExecTxMessage(message as PaymentMessage)
-                MessageTypes.ABORT_TX -> handleAbortTxMessage(message as PaymentMessage)
+            sortMessage(message)
+        }
+    }
+
+    open suspend fun sortMessage(message: Message) {
+        when (message.type) {
+            MessageTypes.REQ_TX -> handleRequestTxMessage(message as RequestPaymentMessage)
+            MessageTypes.EXEC_TX -> handleExecTxMessage(message as PaymentMessage)
+            MessageTypes.ABORT_TX -> handleAbortTxMessage(message as PaymentMessage)
+            else -> {
+                println("$this cannot process ${message.type}")
             }
         }
     }
@@ -144,7 +151,7 @@ class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
         ongoingPayments.remove(mes.payment)
     }
 
-    private fun getChannelForNode(node: Node): PaymentChannel {
+    fun getChannelForNode(node: Node): PaymentChannel {
         for (channel in paymentChannels) {
             if (channel.getOppositeNode(this) === node) {
                 return channel

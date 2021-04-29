@@ -2,9 +2,10 @@ package roemer.rebalancing
 
 import org.jgrapht.GraphPath
 import org.jgrapht.graph.DefaultWeightedEdge
+import java.util.UUID
 
 enum class MessageTypes {
-    REQ_TX, EXEC_TX, ABORT_TX
+    REQ_TX, EXEC_TX, ABORT_TX, INVITE_P, ACCEPT_P, FINISH_P, DENY_P
 }
 
 abstract class Message(
@@ -41,5 +42,52 @@ class RequestPaymentMessage(
 ): PaymentMessage(type, sender, recipient, payment) {
     override fun toString(): String {
         return "RequestPaymentMessage(type=$type, payment=$payment, sender=$sender, recipient=$recipient, path=$path)"
+    }
+}
+
+open class ParticipantMessage(
+    type: MessageTypes,
+    sender: Node,
+    recipient: Node,
+    val executionId: UUID
+): Message(type, sender, recipient) {
+    override fun toString(): String {
+        return "ParticipantMessage(type=$type, sender=$sender, recipient=$recipient, executionId=$executionId)"
+    }
+}
+
+class InviteParticipantMessage(
+    type: MessageTypes,
+    sender: Node,
+    recipient: Node,
+    executionId: UUID,
+    val hopCount: Int
+): ParticipantMessage(type, sender, recipient, executionId) {
+    override fun toString(): String {
+        return "InviteParticipantMessage(type=$type, sender=$sender, recipient=$recipient, executionId=$executionId, hopCount=$hopCount)"
+    }
+}
+
+open class AcceptParticipantMessage(
+    type: MessageTypes,
+    sender: Node,
+    recipient: Node,
+    executionId: UUID,
+    val participants: Set<UUID>
+): ParticipantMessage(type, sender, recipient, executionId) {
+    override fun toString(): String {
+        return "AcceptParticipantMessage(type=$type, sender=$sender, recipient=$recipient, executionId=$executionId, participants=$participants)"
+    }
+}
+
+class FinishParticipantMessage(
+    type: MessageTypes,
+    sender: Node,
+    recipient: Node,
+    executionId: UUID,
+    participants: Set<UUID>
+): AcceptParticipantMessage(type, sender, recipient, executionId, participants) {
+    override fun toString(): String {
+        return "FinishParticipantMessage(type=$type, sender=$sender, recipient=$recipient, executionId=$executionId, participants=$participants)"
     }
 }
