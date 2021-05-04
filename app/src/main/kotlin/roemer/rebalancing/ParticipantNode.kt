@@ -26,7 +26,7 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
         }
     }
 
-    suspend fun start(hopCount: Int) {
+    suspend fun startFindingParticipants(hopCount: Int) {
         this.awake = true
         this.started = true
         executionId = UUID.randomUUID()
@@ -42,8 +42,7 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
     } 
 
     suspend fun handleInviteMessage(mes: InviteParticipantMessage) {
-        println("Node $this received invite by ${mes.sender}")
-        if (SeededRandom.random.nextInt(10) == 0) { // Deny randomly 1 in 10 times
+        if (false && SeededRandom.random.nextInt(10) == 0) { // Deny randomly 1 in 10 times
             return sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, mes.sender, mes.executionId))
         } else if (executionId == null) {
             executionId = mes.executionId
@@ -74,12 +73,19 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
         // If not awake, propagate invite to other channels
         if (!this.awake) {
             this.awake = true
+            var invitesSend = false
             for (channel in this.paymentChannels) {
                 if (channel !== senderChannel && channel.getCurrentDemand(this) != 0) {
                     sendMessage(InviteParticipantMessage(
                         MessageTypes.INVITE_P, this, channel.getOppositeNode(this), executionId!!, mes.hopCount - 1
                     ))
+                    invitesSend = true
                 }
+            }
+
+            if (!invitesSend) {
+                sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, mes.sender, executionId!!))
+                terminate(false)
             }
         }
 
@@ -91,8 +97,9 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
     }
 
     suspend fun handleAcceptMessage(mes: AcceptParticipantMessage) {
-        println("Node $this received accept by ${mes.sender}")
-        if (mes.executionId != executionId) {
+        if (!awake) {
+            return
+        } else if (mes.executionId != executionId) {
             return sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, mes.sender, executionId!!))
         }
 
@@ -111,7 +118,7 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
 
         if (!positiveDemandEdges.isEmpty() && !negativeDemandEdges.isEmpty()) {
             for (channel in this.unacceptedInviteEdges) {
-                sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, executionId!!, participants))
+                sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, channel.getOppositeNode(this), executionId!!, participants))
             }
             this.unacceptedInviteEdges = HashSet()
         }
@@ -120,13 +127,14 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
             for (channel in this.acceptedEdges) {
                 sendMessage(FinishParticipantMessage(MessageTypes.FINISH_P, this, channel.getOppositeNode(this), executionId!!, participants))
             }
-            terminate()
+            terminate(true)
         }
     }
 
     suspend fun handleFinishMessage(mes: FinishParticipantMessage) {
-        println("Node $this received finish by ${mes.sender}")
-        if (mes.executionId != executionId) {
+        if (!awake) {
+            return
+        } else if (mes.executionId != executionId) {
             return sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, mes.sender, executionId!!))
         }
 
@@ -135,16 +143,23 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
         for (channel in this.acceptedEdges) {
             sendMessage(FinishParticipantMessage(MessageTypes.FINISH_P, this, channel.getOppositeNode(this), executionId!!, participants))
         }
-        terminate()
+        terminate(true)
     }
 
     suspend fun handleDenyMessage(mes: ParticipantMessage) {
-        println("Node $this received deny by ${mes.sender}")
+        if (!awake) {
+            return
+        }
         this.nOfExpectedResponses -= 1
     }
 
-    fun terminate() {
-        println("Node $this finished with participants $participants")
+    fun terminate(success: Boolean) {
+        if (success) {
+            println("Node $this finished with participants $participants")
+        } else {
+            println("Node $this finished but was not successfull")
+        }
+        
         reset()
     }
 

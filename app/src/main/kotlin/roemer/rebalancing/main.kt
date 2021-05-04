@@ -12,5 +12,5 @@ fun main(args: Array<String>) {
 //    val c = Channel(n1, n2, 100, 50)
 
 //    println(c)
-    val graph = GraphHolder("prot_graph.txt")
+    val graph = GraphHolder("difficult_graph.txt")
 }

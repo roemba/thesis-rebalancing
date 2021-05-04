@@ -139,11 +139,13 @@ class PaymentChannel(val node1: Node, val node2: Node, var balance1: Int, var ba
     }
 
     suspend fun getCurrentDemand(vertex: Node): Int {
-        val diff = (this.balance2 - this.balance1) / 2
+        var diff = (this.balance2 - this.balance1) / 2
 
-        if (vertex === this.node1) {
-            return diff * -1
+        if (vertex === this.node2) {
+            diff *= -1
         }
+
+        println("Node $vertex gets demand $diff on channel $this")
         return diff
     }
 
