@@ -5,6 +5,8 @@ plugins {
 
 group = "me.roemer"
 version = "1.0-SNAPSHOT"
+val arguments: MutableList<String> = ArrayList()
+arguments.add("-ea")
 
 repositories {
     mavenCentral()
@@ -21,4 +23,5 @@ dependencies {
 
 application {
     mainClass.set("roemer.rebalancing.MainKt")
+    applicationDefaultJvmArgs = arguments
 }

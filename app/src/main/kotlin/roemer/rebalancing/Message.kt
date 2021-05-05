@@ -17,7 +17,6 @@ abstract class Message(
         init {
             assert(channel.isChannelNode(sender))
             assert(channel.isChannelNode(recipient))
-            assert(false)
         }
     }
 

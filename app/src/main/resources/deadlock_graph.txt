@@ -3,3 +3,5 @@
 0-1 300-200
 0-2 300-200
 1-2 300-200
+
+# There are no cycles in this graph
