@@ -4,22 +4,26 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import org.jgrapht.GraphPath
 import org.jgrapht.Graphs
+import org.jgrapht.Graph
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.graph.DefaultWeightedEdge
+import kotlinx.coroutines.delay
 
 open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
     val paymentChannels: MutableList<PaymentChannel> = ArrayList()
     val ongoingPayments: MutableMap<Payment, LocalPayment> = HashMap()
     val messageChannel = Channel<Message>(Channel.UNLIMITED)
+    val logger = Logger(this)
 
     suspend fun startPayment(amount: Int, receiver: Node) {
         val payment = Payment(this, receiver, amount)
 
-        val shortestPathDijkstra: DijkstraShortestPath<Node, DefaultWeightedEdge> = DijkstraShortestPath(g)
+        val shortestPathDijkstra: DijkstraShortestPath<Node, DefaultWeightedEdge> = DijkstraShortestPath(g.graph)
         val path = shortestPathDijkstra.getPath(this, receiver)
 
-        val nextNode = this.getNextNodeInPath(path)
-        val toChannel = this.getChannelForNode(nextNode)
+        
+        val toChannel = this.getChannelFromEdge(this.getNextEdgeInPath(path))
+        val nextNode = toChannel.getOppositeNode(this)
         val tx = Transaction(payment.paymentId, payment.amount, this, nextNode)
 
         // If commit fails, raise error immediately
@@ -30,14 +34,16 @@ open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
         ongoingPayments[payment] = LocalPayment(payment, null, toChannel, tx)
 
         sendMessage(
-            RequestPaymentMessage(MessageTypes.REQ_TX, this, nextNode, payment, path)
+            RequestPaymentMessage(MessageTypes.REQ_TX, this, nextNode, toChannel, payment, path)
         )
     }
 
     suspend fun sendMessage(message: Message) {
-        val neighbours = Graphs.neighborListOf(g, this)
+        val neighbours = Graphs.neighborListOf(g.graph, this)
         for (neighbour in neighbours) {
             if (neighbour === message.recipient) {
+                val randomDelay = SeededRandom.random.nextLong(1000)
+                delay(randomDelay)
                 neighbour.messageChannel.send(message)
                 return
             }
@@ -50,7 +56,7 @@ open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
         while (!messageChannel.isClosedForReceive) {
             val message = messageChannel.receive()
 
-            println("$this received $message")
+            logger.log("Received $message")
             if (message.recipient !== this) {
                 sendMessage(message)
                 return
@@ -66,7 +72,7 @@ open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
             MessageTypes.EXEC_TX -> handleExecTxMessage(message as PaymentMessage)
             MessageTypes.ABORT_TX -> handleAbortTxMessage(message as PaymentMessage)
             else -> {
-                println("$this cannot process ${message.type}")
+                logger.log("Cannot process ${message.type}")
             }
         }
     }
@@ -74,7 +80,7 @@ open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
     private suspend fun handleRequestTxMessage(mes: RequestPaymentMessage) {
         if (this === mes.path.endVertex) {
             sendMessage(
-                PaymentMessage(MessageTypes.EXEC_TX, this, mes.sender, mes.payment)
+                PaymentMessage(MessageTypes.EXEC_TX, this, mes.sender, mes.channel, mes.payment)
             )
             return
         }
@@ -85,17 +91,17 @@ open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
         }
 
         // Collect information to create localPayment
-        val nextNode = this.getNextNodeInPath(mes.path)
+        val toChannel = this.getChannelFromEdge(this.getNextEdgeInPath(mes.path))
+        val nextNode = toChannel.getOppositeNode(this)
         val previousNode = mes.sender
-        val fromChannel = this.getChannelForNode(previousNode)
-        val toChannel = this.getChannelForNode(nextNode)
+        val fromChannel = mes.channel
 
         val tx = Transaction(mes.payment.paymentId, mes.payment.amount, this, nextNode)
 
         // If commit fails, send ABORT to sender of the message
         if (!toChannel.requestTx(tx)) {
             sendMessage(
-                PaymentMessage(MessageTypes.ABORT_TX, this, previousNode, mes.payment)
+                PaymentMessage(MessageTypes.ABORT_TX, this, previousNode, fromChannel, mes.payment)
             )
             return
         }
@@ -103,7 +109,7 @@ open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
         ongoingPayments[mes.payment] = LocalPayment(mes.payment, fromChannel, toChannel, tx)
 
         sendMessage(
-            RequestPaymentMessage(MessageTypes.REQ_TX, this, nextNode, mes.payment, mes.path)
+            RequestPaymentMessage(MessageTypes.REQ_TX, this, nextNode, toChannel, mes.payment, mes.path)
         )
     }
 
@@ -122,7 +128,7 @@ open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
         // If it was not I who started the tx, propagate Exec
         if (localPayment.fromPaymentChannel !== null) {
             sendMessage(
-                PaymentMessage(MessageTypes.EXEC_TX, this, localPayment.fromPaymentChannel.getOppositeNode(this), mes.payment)
+                PaymentMessage(MessageTypes.EXEC_TX, this, localPayment.fromPaymentChannel.getOppositeNode(this), localPayment.fromPaymentChannel, mes.payment)
             )
         }
 
@@ -144,31 +150,46 @@ open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
         // If it was not I who started the tx, propagate Abort
         if (localPayment.fromPaymentChannel !== null) {
             sendMessage(
-                PaymentMessage(MessageTypes.ABORT_TX, this, localPayment.fromPaymentChannel.getOppositeNode(this), mes.payment)
+                PaymentMessage(MessageTypes.ABORT_TX, this, localPayment.fromPaymentChannel.getOppositeNode(this), localPayment.fromPaymentChannel, mes.payment)
             )
         }
 
         ongoingPayments.remove(mes.payment)
     }
 
-    fun getChannelForNode(node: Node): PaymentChannel {
+    fun getChannelsForNode(node: Node): List<PaymentChannel> {
+        val channels: MutableList<PaymentChannel> = ArrayList()
         for (channel in paymentChannels) {
             if (channel.getOppositeNode(this) === node) {
+                channels.add(channel)
+            }
+        }
+
+        if (channels.isEmpty()) {
+            throw IllegalArgumentException("$this has no channel with $node!")
+        }
+
+        return channels
+    }
+
+    private fun getChannelFromEdge(edge: DefaultWeightedEdge): PaymentChannel {
+        for (channel in paymentChannels) {
+            if (channel.edges.contains(edge)) {
                 return channel
             }
         }
 
-        throw IllegalArgumentException("$this has no channel with $node!")
+        throw IllegalArgumentException("Edge provided is not a member of any of the channels of $this!")
     }
 
-    private fun getNextNodeInPath(path: GraphPath<Node, DefaultWeightedEdge>): Node {
+    private fun getNextEdgeInPath(path: GraphPath<Node, DefaultWeightedEdge>): DefaultWeightedEdge {
         for (edge in path.edgeList) {
-            if (g.getEdgeSource(edge) === this) {
-                return g.getEdgeTarget(edge)
+            if (g.graph.getEdgeSource(edge) === this) {
+                return edge
             }
         }
 
-        throw IllegalArgumentException("Path provided does not contain node $this!")
+        throw IllegalArgumentException("$this does not appear in path $path!")
     }
 
     override fun toString(): String {
@@ -176,10 +197,10 @@ open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
     }
 
     override fun equals(other: Any?): Boolean {
-        return (other is Node) && (this.toString() == other.toString())
+        return (other is Node) && (this.id == other.id)
     }
 
     override fun hashCode(): Int {
-        return this.toString().hashCode()
+        return this.id.hashCode()
     }
 }

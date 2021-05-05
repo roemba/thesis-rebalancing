@@ -34,7 +34,7 @@ class GraphHolder(fileName: String) {
         runBlocking {
             for (i in 0 until nOfNodes) {
                 val n = ParticipantNode(i, g)
-                g.addVertex(n)
+                g.graph.addVertex(n)
                 nodes[i] = n
                 launch { n.receiveMessage() }
             }
@@ -50,7 +50,7 @@ class GraphHolder(fileName: String) {
             println("Continued while nodes are waiting")
             // println("\nStarting test payment 1, amount 2\n")
             // printChannelBalances()
-            // nodes[4]!!.startPayment(2, nodes[1]!!)
+            // nodes[0]!!.startPayment(2, nodes[3]!!)
 
             // //delay(2000)
             // println("\nStarting test payment 2, amount 2\n")
@@ -66,7 +66,7 @@ class GraphHolder(fileName: String) {
             // println("\nStarting test payment 4, amount 2\n")
             // //printChannelBalances()
 
-            nodes[0]!!.startFindingParticipants(5)
+            nodes[0]!!.startFindingParticipants(20)
 
             // try {
             //     nodes[4]!!.startPayment(2, nodes[1]!!)
@@ -74,7 +74,7 @@ class GraphHolder(fileName: String) {
             //     println(e)
             // }
 
-            delay(2000)
+            delay(8000)
             println()
             printChannelBalances()
             

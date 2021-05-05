@@ -3,8 +3,11 @@ package roemer.rebalancing
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.lang.IllegalArgumentException
+import org.jgrapht.graph.DefaultWeightedEdge
+import java.util.UUID
 
-class PaymentChannel(val node1: Node, val node2: Node, var balance1: Int, var balance2: Int) {
+class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultWeightedEdge>, var balance1: Int, var balance2: Int) {
+    val id = UUID.randomUUID()
     var totalFunds = balance1 + balance2
         private set
     var pendingBalance1 = balance1
@@ -126,6 +129,7 @@ class PaymentChannel(val node1: Node, val node2: Node, var balance1: Int, var ba
         return true
     }
 
+    @Throws(IllegalStateException::class)
     suspend fun getDemand(vertex: Node): Int {
         mutex.withLock {
             this.locked = true
@@ -145,20 +149,26 @@ class PaymentChannel(val node1: Node, val node2: Node, var balance1: Int, var ba
             diff *= -1
         }
 
-        println("Node $vertex gets demand $diff on channel $this")
+        // println("Node $vertex gets demand $diff on channel $this")
         return diff
     }
 
+    suspend fun unlock() {
+        mutex.withLock {
+            this.locked = false
+        }
+    }
+
     override fun toString(): String {
-        return "Channel(balance1=$balance1,balance2=$balance2,totalFunds=$totalFunds,node1=$node1,node2=$node2)"
+        return "Channel(balance1=$balance1,balance2=$balance2,totalFunds=$totalFunds,node1=$node1,node2=$node2,locked=$locked)"
     }
 
     override fun equals(other: Any?): Boolean {
-        return (other is PaymentChannel) && (this.toString() == other.toString())
+        return (other is PaymentChannel) && (this.id == other.id)
     }
 
     override fun hashCode(): Int {
-        return this.toString().hashCode()
+        return this.id.hashCode()
     }
 
 
