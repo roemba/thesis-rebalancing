@@ -4,6 +4,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 
 @ExperimentalCoroutinesApi
 fun main(args: Array<String>) {
+    // println("Program will start in five seconds")
+    // Thread.sleep(10000)
     println("Program has started")
 //    val n1 = Node()
 //    val n2 = Node()
@@ -12,5 +14,5 @@ fun main(args: Array<String>) {
 //    val c = Channel(n1, n2, 100, 50)
 
 //    println(c)
-    val graph = GraphHolder("simple_graph.txt")
+    val graph = GraphHolder("difficult_graph.txt")
 }

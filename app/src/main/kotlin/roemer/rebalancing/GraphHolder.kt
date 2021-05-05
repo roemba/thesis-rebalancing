@@ -67,6 +67,7 @@ class GraphHolder(fileName: String) {
             // //printChannelBalances()
 
             nodes[0]!!.startFindingParticipants(20)
+            nodes[4]!!.startFindingParticipants(20)
 
             // try {
             //     nodes[4]!!.startPayment(2, nodes[1]!!)
@@ -74,7 +75,7 @@ class GraphHolder(fileName: String) {
             //     println(e)
             // }
 
-            delay(8000)
+            delay(15000)
             println()
             printChannelBalances()
             

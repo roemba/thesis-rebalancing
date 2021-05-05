@@ -5,7 +5,6 @@ import kotlinx.coroutines.delay
 
 class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id, g, totalFunds) {
     var awake = false
-    var nOfExpectedResponses: Int = 0
     var started = false
     var executionId: UUID? = null
     var anonId: UUID? = null
@@ -14,8 +13,7 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
     var acceptedEdges: MutableSet<PaymentChannel> = HashSet()
     var positiveDemandEdges: MutableSet<PaymentChannel> = HashSet()
     var negativeDemandEdges: MutableSet<PaymentChannel> = HashSet()
-
-    var deniedEdges: MutableSet<PaymentChannel> = HashSet()
+    var invitedEdges: MutableSet<PaymentChannel> = HashSet()
     
     override suspend fun sortMessage (message: Message) {
         when (message.type) {
@@ -35,34 +33,40 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
         executionId = UUID.randomUUID()
         anonId = UUID.randomUUID()
         participants.add(anonId!!)
-        nOfExpectedResponses = this.paymentChannels.size
+
+        logger.log("Starting to find participants with execution id: $executionId and participant id: $anonId")
 
         for (channel in this.paymentChannels) {
             sendMessage(InviteParticipantMessage(
                 MessageTypes.INVITE_P, this, channel.getOppositeNode(this), channel, executionId!!, hopCount
             ))
+            invitedEdges.add(channel)
         }
     } 
 
     suspend fun handleInviteMessage(mes: InviteParticipantMessage) {
-        if (SeededRandom.random.nextInt(10) < -1) { // Deny randomly 1 in 10 times
-            deniedEdges.add(mes.channel)
-            return sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, mes.sender, mes.channel, mes.executionId))
-        } else if (executionId == null) {
-            executionId = mes.executionId
-            anonId = UUID.randomUUID()
-            participants.add(anonId!!)
-        } else if (mes.executionId != executionId) {
+        // Deny if execution id is not the same
+        if (executionId != null && mes.executionId != executionId) {
+            logger.log("Denying because other execution id")
             return sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, mes.sender, mes.channel, executionId!!))
         }
 
-        // Get the demand and put it into the correct collection
+        // Deny if the channel still has ongoing transactions after 5s
         val senderChannel = mes.channel
         val (demand, success) = this.getDemandForChannel(senderChannel)
         if (!success) {
             return sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, mes.sender, mes.channel, executionId!!))
         }
 
+        // If not already claimed, become claimed
+        if (executionId == null) {
+            executionId = mes.executionId
+            anonId = UUID.randomUUID()
+            participants.add(anonId!!)
+            logger.log("Claimed by execution id: $executionId using participant id: $anonId")
+        }
+
+        // Put demand into the correct collection
         if (demand > 0) {
             positiveDemandEdges.add(senderChannel)
         } else {
@@ -83,21 +87,22 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
         if (!this.awake) {
             this.awake = true
             for (channel in this.paymentChannels) {
-                if (channel !== senderChannel && channel.getCurrentDemand(this) != 0 && !deniedEdges.contains(channel)) {
+                if (channel !== senderChannel && channel.getCurrentDemand(this) != 0) {
                     sendMessage(InviteParticipantMessage(
                         MessageTypes.INVITE_P, this, channel.getOppositeNode(this), channel, executionId!!, mes.hopCount - 1
                     ))
-                    nOfExpectedResponses += 1
+                    invitedEdges.add(channel)
                 }
             }
 
-            if (nOfExpectedResponses == 0) {
+            if (invitedEdges.isEmpty()) {
                 sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, mes.sender, mes.channel, executionId!!))
                 return terminate(false, "No one to sent invites to")
             }
         }
 
         if (!positiveDemandEdges.isEmpty() && !negativeDemandEdges.isEmpty()) {
+            acceptedEdges.add(mes.channel)
             return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants))
         } else {
             unacceptedInviteEdges.add(senderChannel)
@@ -112,9 +117,9 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
         }
 
         participants.addAll(mes.participants)
-        this.nOfExpectedResponses -= 1
 
         val senderChannel = mes.channel
+        invitedEdges.remove(senderChannel)
         acceptedEdges.add(senderChannel)
 
         val (demand, success) = this.getDemandForChannel(senderChannel)
@@ -131,35 +136,38 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
         handleResponses()
     }
 
+    suspend fun denyAndTerminate (reason: String) {
+        for (channel in this.unacceptedInviteEdges) {
+            sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, channel.getOppositeNode(this), channel, executionId!!))
+        }
+        terminate(false, reason)
+    }
+
     suspend fun handleResponses() {
         val canSendAccept = !positiveDemandEdges.isEmpty() && !negativeDemandEdges.isEmpty()
 
-        val denyAndTerminate = suspend {
-            for (channel in this.unacceptedInviteEdges) {
-                sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, channel.getOppositeNode(this), channel, executionId!!))
-            }
-            terminate(false, "Received only deny's")
+        if (!possibleToParticipate()) {
+            return denyAndTerminate("Made no sense to continue participation")
         }
 
-        if (canSendAccept) {
-            for (channel in this.unacceptedInviteEdges) {
-                sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, channel.getOppositeNode(this), channel, executionId!!, participants))
-            }
-            this.unacceptedInviteEdges = HashSet()
-        }
-
-        if (this.nOfExpectedResponses == 0) {
+        if (invitedEdges.isEmpty()) {
             if (this.acceptedEdges.isNotEmpty()) {
                 if (this.started) {
                     for (channel in this.acceptedEdges) {
                         sendMessage(FinishParticipantMessage(MessageTypes.FINISH_P, this, channel.getOppositeNode(this), channel, executionId!!, participants))
                     }
                     return terminate(true)
-                } else if (!canSendAccept) {
-                    denyAndTerminate()
+                } else if (canSendAccept) {
+                    for (channel in this.unacceptedInviteEdges) {
+                        acceptedEdges.add(channel)
+                        sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, channel.getOppositeNode(this), channel, executionId!!, participants))
+                    }
+                    this.unacceptedInviteEdges = HashSet()
+                } else {
+                    denyAndTerminate("Did not receive enough accepts")
                 }
             } else {
-                denyAndTerminate()
+                denyAndTerminate("Did not receive any accepts")
             }
         }
     }
@@ -174,7 +182,9 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
         participants.addAll(mes.participants)
 
         for (channel in this.acceptedEdges) {
-            sendMessage(FinishParticipantMessage(MessageTypes.FINISH_P, this, channel.getOppositeNode(this), channel, executionId!!, participants))
+            if (channel != mes.channel) {
+                sendMessage(FinishParticipantMessage(MessageTypes.FINISH_P, this, channel.getOppositeNode(this), channel, executionId!!, participants))
+            }
         }
         terminate(true)
     }
@@ -182,16 +192,44 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
     suspend fun handleDenyMessage(mes: ParticipantMessage) {
         if (!awake) {
             return
-        } else if (mes.executionId != executionId) {
-            return sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, mes.sender, mes.channel, executionId!!))
         }
         
-        this.nOfExpectedResponses -= 1
-
+        unacceptedInviteEdges.remove(mes.channel)
+        invitedEdges.remove(mes.channel)
+        acceptedEdges.remove(mes.channel)
         positiveDemandEdges.remove(mes.channel)
         negativeDemandEdges.remove(mes.channel)
 
         handleResponses()
+    }
+
+    /*
+        Determine if, with the current information, it still makes sense for the node to keep trying to participate
+    */
+    suspend fun possibleToParticipate(): Boolean {
+        var nOfPotentialPositiveEdges = 0
+        var nOfPotentialNegativeEdges = 0
+
+        val edges: MutableSet<PaymentChannel> = HashSet()
+        edges.addAll(acceptedEdges)
+        edges.addAll(invitedEdges)
+        edges.addAll(positiveDemandEdges)
+        edges.addAll(negativeDemandEdges)
+
+        // Find the channels on which we have sent *and* received an invite, as we can then assume that both parties want to accept. We can also check these for potential.
+        for (channel in edges) {
+            val demand = channel.getCurrentDemand(this)
+
+            if (demand > 0) {
+                nOfPotentialPositiveEdges += 1
+            } else {
+                nOfPotentialNegativeEdges += 1
+            }
+        }
+
+        // logger.log("$nOfPotentialPositiveEdges - $nOfPotentialNegativeEdges")
+
+        return nOfPotentialPositiveEdges != 0 && nOfPotentialNegativeEdges != 0
     }
 
     suspend fun terminate(success: Boolean, reason: String = "Unknown") {
@@ -225,7 +263,6 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
 
     fun reset() {
         awake = false
-        nOfExpectedResponses = 0
         started = false
         executionId = null
         anonId = null
@@ -234,6 +271,6 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
         acceptedEdges = HashSet()
         positiveDemandEdges = HashSet()
         negativeDemandEdges = HashSet()
-        deniedEdges = HashSet()
+        invitedEdges = HashSet()
     }
 }

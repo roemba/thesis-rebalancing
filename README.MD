@@ -1,0 +1,1 @@
+Network topology downloaded from https://explorer.acinq.co/
