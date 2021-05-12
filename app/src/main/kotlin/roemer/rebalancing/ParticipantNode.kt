@@ -75,7 +75,7 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
         
         // If hop count is 0, terminate search
         if (mes.hopCount - 1 == 0) {
-            if (positiveDemandEdges.isEmpty() || negativeDemandEdges.isEmpty()) {
+            if (positiveDemandEdges.isEmpty() || negativeDemandEdges.isEmpty()) { // Fix here that, only terminate if not already accepted
                 sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, mes.sender, mes.channel, executionId!!))
                 return terminate(false, "Hop count is zero and not enough participating edges")
             } else {
@@ -234,6 +234,7 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
 
     suspend fun terminate(success: Boolean, reason: String = "Unknown") {
         if (success) {
+            println("$this finished with participants $participants")
             logger.log("Finished with participants $participants")
         } else {
             for (channel in this.paymentChannels) {

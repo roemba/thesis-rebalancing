@@ -15,75 +15,117 @@ import guru.nidi.graphviz.engine.Graphviz
 import guru.nidi.graphviz.engine.Format
 
 @ExperimentalCoroutinesApi
-class GraphHolder(fileName: String) {
-
+class GraphHolder {
     val paymentChannels: MutableList<PaymentChannel> = ArrayList()
-    private val g = ChannelNetwork()
+    val g: ChannelNetwork
+    val nodes: List<ParticipantNode>
 
-    init {
-        val resourceName = this::class.java.classLoader.getResource(fileName)!!.file
-        
-        txtGraphToGraphvix(resourceName, fileName)
+    constructor (g: ChannelNetwork, nodes: List<ParticipantNode>) {
+        this.g = g
+        this.nodes = nodes
+    }
+
+    constructor (nodeFileName: String, channelFileName: String) {
+        val translator = TopologyTranslator(nodeFileName, channelFileName)
+        val (g, nodes) = translator.translate()
+
+        this.g = g
+        this.nodes = nodes
+    }
+
+    constructor (txtGraphFileName: String) {
+        g = ChannelNetwork()
+
+        val resourceName = this::class.java.classLoader.getResource(txtGraphFileName)!!.file
+
+        txtGraphToGraphViz(resourceName, txtGraphFileName)
 
         val graphFileReader = Scanner(File(resourceName))
         val nOfNodes = graphFileReader.nextInt()
         graphFileReader.nextLine()
 
-        val nodes: Array<ParticipantNode?> = arrayOfNulls(nOfNodes)
+        val nodes: MutableList<ParticipantNode> = ArrayList()
+        for (i in 0 until nOfNodes) {
+            val n = ParticipantNode(i, g)
+            g.graph.addVertex(n)
+            nodes.add(n)
+        }
+        
+        val edgePattern = "\\d+-\\d+"
+        while (graphFileReader.hasNext(edgePattern)) {
+            val edgeString = graphFileReader.next(edgePattern)
+            val nodeIds = edgeString.split("-").map { it.toInt() }
+            val balances = graphFileReader.next(edgePattern).split("-").map { it.toInt() }
 
+            g.addChannel(nodes[nodeIds[0]], nodes[nodeIds[1]], balances[0], balances[1])
+        }
+
+        this.nodes = nodes
+    }
+
+    fun start () {
         runBlocking {
-            for (i in 0 until nOfNodes) {
-                val n = ParticipantNode(i, g)
-                g.graph.addVertex(n)
-                nodes[i] = n
-                launch { n.receiveMessage() }
-            }
-            
-            val edgePattern = "\\d+-\\d+"
-            while (graphFileReader.hasNext(edgePattern)) {
-                val edgeString = graphFileReader.next(edgePattern)
-                val nodeIds = edgeString.split("-").map { it.toInt() }
-                val balances = graphFileReader.next(edgePattern).split("-").map { it.toInt() }
-
-                g.addChannel(nodes[nodeIds[0]]!!, nodes[nodeIds[1]]!!, balances[0], balances[1])
+            for (node in nodes) {
+                launch { node.receiveMessage() }
             }
             println("Continued while nodes are waiting")
-            // println("\nStarting test payment 1, amount 2\n")
-            // printChannelBalances()
-            // nodes[0]!!.startPayment(2, nodes[3]!!)
 
-            // //delay(2000)
-            // println("\nStarting test payment 2, amount 2\n")
-            // //printChannelBalances()
-            // nodes[4]!!.startPayment(2, nodes[1]!!)
+            println(nodes[0].paymentChannels.size)
+            val visitedNodes = HashSet<Node>()
+            for (channel in nodes[0].paymentChannels) {
+                println("Printing channels of node 0")
+                println(channel)
+                val otherNode = channel.getOppositeNode(nodes[0])
+                if (!visitedNodes.contains(otherNode)) {
+                    visitedNodes.add(otherNode)
+                    println("Printing channels of node $otherNode - ${otherNode.paymentChannels.size}")
+                    for (channelOther in otherNode.paymentChannels) {
+                        if (channel != channelOther) {
+                            println("$channelOther - ${channelOther.id}")
+                        }
+                    }
+                }
 
-            // //delay(2000)
-            // println("\nStarting test payment 3, amount 2\n")
-            // //printChannelBalances()
-            // nodes[2]!!.startPayment(2, nodes[4]!!)
 
-            // delay(2000)
-            // println("\nStarting test payment 4, amount 2\n")
-            // //printChannelBalances()
-
-            nodes[0]!!.startFindingParticipants(20)
-            nodes[4]!!.startFindingParticipants(20)
+            }
+            nodes[0].startFindingParticipants(3)
+            // nodes[4].startFindingParticipants(20)
 
             // try {
             //     nodes[4]!!.startPayment(2, nodes[1]!!)
             // } catch (e: TransactionAbortedException) {
             //     println(e)
             // }
-
-            delay(15000)
-            println()
-            printChannelBalances()
             
-            val awake = Array(nOfNodes) {_ -> false}
-            for (i in 0 until nOfNodes) {
-                awake[i] = nodes[i]!!.awake
+            outerLoop@ while (true) {
+                println("Still running, will check in 5s...")
+                var nOfAwake = 0
+                for (i in 0 until nodes.size) {
+                    if (nodes[i].awake) {
+                        nOfAwake++
+                    }
+                }
+                println("Awake nodes: $nOfAwake")
+                delay(5000)
+                for (i in 0 until nodes.size) {
+                    if (!nodes[i].messageChannel.isEmpty) {
+                        continue@outerLoop
+                    }
+                }
+                break
             }
-            println("Awake nodes: " + Arrays.toString(awake))
+
+            delay(30000)
+            println()
+            // printChannelBalances()
+            var nOfAwake = 0
+            for (i in 0 until nodes.size) {
+                if (nodes[i].awake) {
+                    println(nodes[i])
+                    nOfAwake++
+                }
+            }
+            println("Awake nodes: $nOfAwake")
         }
     }
 
@@ -95,7 +137,7 @@ class GraphHolder(fileName: String) {
         println()
     }
 
-    private fun txtGraphToGraphvix(resourceName: String, fileName: String) {
+    private fun txtGraphToGraphViz(resourceName: String, fileName: String) {
         var g = GraphVizGraph(resourceName).directed().graphAttr().with("splines", true)
         val graphFileReader = Scanner(File(resourceName))
         graphFileReader.nextLine()

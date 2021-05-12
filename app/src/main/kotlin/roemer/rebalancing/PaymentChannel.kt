@@ -19,7 +19,7 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
     private val mutex = Mutex()
     var locked: Boolean = false
         private set
-
+    
     fun getOppositeNode(vertex: Node): Node {
         if (!(this.isChannelNode(vertex))) {
             throw IllegalArgumentException("The given node does not belong to this channel!")

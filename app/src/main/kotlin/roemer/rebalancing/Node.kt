@@ -42,8 +42,8 @@ open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
         val neighbours = Graphs.neighborListOf(g.graph, this)
         for (neighbour in neighbours) {
             if (neighbour === message.recipient) {
-                val randomDelay = SeededRandom.random.nextLong(1000)
-                delay(randomDelay)
+                val randomDelay = SeededRandom.random.nextLong(200)
+                // delay(randomDelay)
                 neighbour.messageChannel.send(message)
                 return
             }
