@@ -61,7 +61,7 @@ open class ParticipantMessage(
     val executionId: UUID
 ): Message(type, sender, recipient, channel) {
     override fun toString(): String {
-        return "ParticipantMessage(type=$type, sender=$sender, recipient=$recipient, executionId=$executionId)"
+        return "ParticipantMessage(type=$type, sender=$sender, recipient=$recipient, executionId=$executionId, channel=${channel.id})"
     }
 }
 
@@ -74,7 +74,7 @@ class InviteParticipantMessage(
     val hopCount: Int
 ): ParticipantMessage(type, sender, recipient, channel, executionId) {
     override fun toString(): String {
-        return "InviteParticipantMessage(type=$type, sender=$sender, recipient=$recipient, executionId=$executionId, hopCount=$hopCount)"
+        return "InviteParticipantMessage(sender=$sender, recipient=$recipient, executionId=$executionId, hopCount=$hopCount, channel=${channel.id})"
     }
 }
 
@@ -87,7 +87,7 @@ open class AcceptParticipantMessage(
     val participants: Set<UUID>
 ): ParticipantMessage(type, sender, recipient, channel, executionId) {
     override fun toString(): String {
-        return "AcceptParticipantMessage(type=$type, sender=$sender, recipient=$recipient, executionId=$executionId, participants=$participants)"
+        return "AcceptParticipantMessage(sender=$sender, recipient=$recipient, executionId=$executionId, channel=${channel.id})"//, participants=$participants)"
     }
 }
 
@@ -100,6 +100,6 @@ class FinishParticipantMessage(
     participants: Set<UUID>
 ): AcceptParticipantMessage(type, sender, recipient, channel, executionId, participants) {
     override fun toString(): String {
-        return "FinishParticipantMessage(type=$type, sender=$sender, recipient=$recipient, executionId=$executionId, participants=$participants)"
+        return "FinishParticipantMessage(sender=$sender, recipient=$recipient, executionId=$executionId)"//, participants=$participants)"
     }
 }

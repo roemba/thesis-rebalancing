@@ -4,6 +4,6 @@ import kotlin.random.Random
 
 class SeededRandom {
     companion object {
-        val random = Random(42)
+        val random = Random(12312)
     } 
 }

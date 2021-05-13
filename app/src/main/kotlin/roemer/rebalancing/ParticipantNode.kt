@@ -14,6 +14,7 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
     var positiveDemandEdges: MutableSet<PaymentChannel> = HashSet()
     var negativeDemandEdges: MutableSet<PaymentChannel> = HashSet()
     var invitedEdges: MutableSet<PaymentChannel> = HashSet()
+    var sourceEdge: PaymentChannel? = null
     
     override suspend fun sortMessage (message: Message) {
         when (message.type) {
@@ -34,7 +35,7 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
         anonId = UUID.randomUUID()
         participants.add(anonId!!)
 
-        logger.log("Starting to find participants with execution id: $executionId and participant id: $anonId")
+        logger.info("Starting to find participants with execution id: $executionId and participant id: $anonId")
 
         for (channel in this.paymentChannels) {
             sendMessage(InviteParticipantMessage(
@@ -47,8 +48,13 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
     suspend fun handleInviteMessage(mes: InviteParticipantMessage) {
         // Deny if execution id is not the same
         if (executionId != null && mes.executionId != executionId) {
-            logger.log("Denying because other execution id")
+            logger.info("Denying because other execution id")
             return sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, mes.sender, mes.channel, executionId!!))
+        }
+
+        // Check if, with current knowledge, it makes sense to participate
+        if (!possibleToParticipate2()) {
+            return sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, mes.sender, mes.channel, mes.executionId))
         }
 
         // Deny if the channel still has ongoing transactions after 5s
@@ -63,7 +69,8 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
             executionId = mes.executionId
             anonId = UUID.randomUUID()
             participants.add(anonId!!)
-            logger.log("Claimed by execution id: $executionId using participant id: $anonId")
+            sourceEdge = mes.channel
+            logger.info("Claimed by execution id: $executionId using participant id: $anonId")
         }
 
         // Put demand into the correct collection
@@ -77,7 +84,9 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
         if (mes.hopCount - 1 == 0) {
             if (positiveDemandEdges.isEmpty() || negativeDemandEdges.isEmpty()) { // Fix here that, only terminate if not already accepted
                 sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, mes.sender, mes.channel, executionId!!))
-                return terminate(false, "Hop count is zero and not enough participating edges")
+                if (!this.awake) {
+                    return terminate(false, "Hop count is zero and not enough participating edges")
+                }
             } else {
                 return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants))
             }
@@ -137,7 +146,12 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
     }
 
     suspend fun denyAndTerminate (reason: String) {
-        for (channel in this.unacceptedInviteEdges) {
+        val edgesToDeny: MutableSet<PaymentChannel> = HashSet()
+        edgesToDeny.addAll(unacceptedInviteEdges)
+        edgesToDeny.addAll(invitedEdges)
+        edgesToDeny.addAll(acceptedEdges)
+
+        for (channel in edgesToDeny) {
             sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, channel.getOppositeNode(this), channel, executionId!!))
         }
         terminate(false, reason)
@@ -146,9 +160,11 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
     suspend fun handleResponses() {
         val canSendAccept = !positiveDemandEdges.isEmpty() && !negativeDemandEdges.isEmpty()
 
-        if (!possibleToParticipate()) {
+        if (!this.started && !possibleToParticipate()) {
             return denyAndTerminate("Made no sense to continue participation")
         }
+
+        logger.debug("nOfInvitedEdges: ${this.invitedEdges.size} nOfAcceptedEdges: ${this.acceptedEdges.size} canSendAccept: $canSendAccept")
 
         if (invitedEdges.isEmpty()) {
             if (this.acceptedEdges.isNotEmpty()) {
@@ -179,7 +195,7 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
             return sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, mes.sender, mes.channel, executionId!!))
         }
 
-        participants.addAll(mes.participants)
+        participants = mes.participants.toMutableSet()
 
         for (channel in this.acceptedEdges) {
             if (channel != mes.channel) {
@@ -200,6 +216,10 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
         positiveDemandEdges.remove(mes.channel)
         negativeDemandEdges.remove(mes.channel)
 
+        if (sourceEdge == mes.channel) {
+            return denyAndTerminate("Source edge has sent deny!")
+        }
+
         handleResponses()
     }
 
@@ -215,6 +235,7 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
         edges.addAll(invitedEdges)
         edges.addAll(positiveDemandEdges)
         edges.addAll(negativeDemandEdges)
+        edges.addAll(unacceptedInviteEdges)
 
         // Find the channels on which we have sent *and* received an invite, as we can then assume that both parties want to accept. We can also check these for potential.
         for (channel in edges) {
@@ -232,15 +253,33 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
         return nOfPotentialPositiveEdges != 0 && nOfPotentialNegativeEdges != 0
     }
 
+    suspend fun possibleToParticipate2(): Boolean {
+        var nOfPotentialPositiveEdges = 0
+        var nOfPotentialNegativeEdges = 0
+
+        // Find the channels on which we have sent *and* received an invite, as we can then assume that both parties want to accept. We can also check these for potential.
+        for (channel in paymentChannels) {
+            val demand = channel.getCurrentDemand(this)
+
+            if (demand > 0) {
+                nOfPotentialPositiveEdges += 1
+            } else {
+                nOfPotentialNegativeEdges += 1
+            }
+        }
+
+        return nOfPotentialPositiveEdges != 0 && nOfPotentialNegativeEdges != 0
+    }
+
     suspend fun terminate(success: Boolean, reason: String = "Unknown") {
         if (success) {
-            println("$this finished with participants $participants")
-            logger.log("Finished with participants $participants")
+            // End result: participants and acceptedEdges
+            logger.info("Finished with participants size: ${participants.size} set: $participants")
         } else {
             for (channel in this.paymentChannels) {
                 channel.unlock()
             }
-            logger.log("Finished but was not successfull because: $reason")
+            logger.info("Finished but was not successfull because: $reason")
         }
         
         reset()
@@ -273,5 +312,6 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
         positiveDemandEdges = HashSet()
         negativeDemandEdges = HashSet()
         invitedEdges = HashSet()
+        sourceEdge = null
     }
 }

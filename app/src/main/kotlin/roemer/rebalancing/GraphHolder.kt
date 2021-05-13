@@ -18,9 +18,9 @@ import guru.nidi.graphviz.engine.Format
 class GraphHolder {
     val paymentChannels: MutableList<PaymentChannel> = ArrayList()
     val g: ChannelNetwork
-    val nodes: List<ParticipantNode>
+    val nodes: List<ParticipantNodeAlt>
 
-    constructor (g: ChannelNetwork, nodes: List<ParticipantNode>) {
+    constructor (g: ChannelNetwork, nodes: List<ParticipantNodeAlt>) {
         this.g = g
         this.nodes = nodes
     }
@@ -44,9 +44,9 @@ class GraphHolder {
         val nOfNodes = graphFileReader.nextInt()
         graphFileReader.nextLine()
 
-        val nodes: MutableList<ParticipantNode> = ArrayList()
+        val nodes: MutableList<ParticipantNodeAlt> = ArrayList()
         for (i in 0 until nOfNodes) {
-            val n = ParticipantNode(i, g)
+            val n = ParticipantNodeAlt(i, g)
             g.graph.addVertex(n)
             nodes.add(n)
         }
@@ -70,25 +70,24 @@ class GraphHolder {
             }
             println("Continued while nodes are waiting")
 
-            println(nodes[0].paymentChannels.size)
-            val visitedNodes = HashSet<Node>()
-            for (channel in nodes[0].paymentChannels) {
-                println("Printing channels of node 0")
-                println(channel)
-                val otherNode = channel.getOppositeNode(nodes[0])
-                if (!visitedNodes.contains(otherNode)) {
-                    visitedNodes.add(otherNode)
-                    println("Printing channels of node $otherNode - ${otherNode.paymentChannels.size}")
-                    for (channelOther in otherNode.paymentChannels) {
-                        if (channel != channelOther) {
-                            println("$channelOther - ${channelOther.id}")
-                        }
-                    }
-                }
+            // val visitedNodes = HashSet<Node>()
+            // for (channel in nodes[0].paymentChannels) {
+            //     println("Printing channels of node 0")
+            //     println(channel)
+            //     val otherNode = channel.getOppositeNode(nodes[0])
+            //     if (!visitedNodes.contains(otherNode)) {
+            //         visitedNodes.add(otherNode)
+            //         println("Printing channels of node $otherNode - ${otherNode.paymentChannels.size}")
+            //         for (channelOther in otherNode.paymentChannels) {
+            //             if (channel != channelOther) {
+            //                 println("$channelOther - ${channelOther.id}")
+            //             }
+            //         }
+            //     }
 
 
-            }
-            nodes[0].startFindingParticipants(3)
+            // }
+            nodes[0].startFindingParticipants(100)
             // nodes[4].startFindingParticipants(20)
 
             // try {
@@ -100,19 +99,26 @@ class GraphHolder {
             outerLoop@ while (true) {
                 println("Still running, will check in 5s...")
                 var nOfAwake = 0
+                val seenPartSizes: MutableSet<Int> = HashSet() 
                 for (i in 0 until nodes.size) {
                     if (nodes[i].awake) {
                         nOfAwake++
                     }
-                }
-                println("Awake nodes: $nOfAwake")
-                delay(5000)
-                for (i in 0 until nodes.size) {
-                    if (!nodes[i].messageChannel.isEmpty) {
-                        continue@outerLoop
+                    if (nodes[i].overalSuccess) {
+                        seenPartSizes.add(nodes[i].finalParticipants!!.size)
                     }
                 }
-                break
+                println("Awake nodes: $nOfAwake")
+                for (i in seenPartSizes) {
+                    println("Seen: $i")
+                }
+                delay(5000)
+                // for (i in 0 until nodes.size) {
+                //     if (!nodes[i].messageChannel.isEmpty) {
+                //         continue@outerLoop
+                //     }
+                // }
+                // break
             }
 
             delay(30000)

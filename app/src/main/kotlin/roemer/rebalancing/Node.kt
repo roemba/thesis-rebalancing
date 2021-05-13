@@ -44,6 +44,9 @@ open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
             if (neighbour === message.recipient) {
                 val randomDelay = SeededRandom.random.nextLong(200)
                 // delay(randomDelay)
+                if (true || message.recipient.id in arrayOf(8259, 2019) && message.sender.id in arrayOf(8259, 2019)) {
+                    logger.debug("Send $message")
+                }
                 neighbour.messageChannel.send(message)
                 return
             }
@@ -56,7 +59,10 @@ open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
         while (!messageChannel.isClosedForReceive) {
             val message = messageChannel.receive()
 
-            logger.log("Received $message")
+            
+            if (true || message.recipient.id in arrayOf(8259, 2019) && message.sender.id in arrayOf(8259, 2019)) {
+                logger.debug("Received $message")
+            }
             if (message.recipient !== this) {
                 sendMessage(message)
                 return
@@ -72,7 +78,7 @@ open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
             MessageTypes.EXEC_TX -> handleExecTxMessage(message as PaymentMessage)
             MessageTypes.ABORT_TX -> handleAbortTxMessage(message as PaymentMessage)
             else -> {
-                logger.log("Cannot process ${message.type}")
+                logger.error("Cannot process ${message.type}")
             }
         }
     }

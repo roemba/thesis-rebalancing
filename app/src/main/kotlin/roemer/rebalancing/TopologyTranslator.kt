@@ -7,6 +7,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.core.type.TypeReference
 import java.io.File
+import org.jgrapht.alg.connectivity.KosarajuStrongConnectivityInspector
+import org.jgrapht.graph.DefaultWeightedEdge
 
 class TopologyTranslator (val nodeFileName: String, val channelFileName: String) {
     val nodeResourcePath: String
@@ -17,7 +19,7 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String)
         this.channelResourcePath = this::class.java.classLoader.getResource(channelFileName)!!.file
     }
 
-    fun translate(): Pair<ChannelNetwork, List<ParticipantNode>> {
+    fun translate(): Pair<ChannelNetwork, List<ParticipantNodeAlt>> {
         data class JSONNode (val id: String)
         data class JSONChannel (val id: String, val source: String, val target: String)
 
@@ -28,7 +30,7 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String)
         val jsonChannels: List<JSONChannel> = mapper.readValue(File(channelResourcePath))
 
 
-        val nodes: MutableList<ParticipantNode> = ArrayList()
+        val nodes: MutableList<ParticipantNodeAlt> = ArrayList()
         val nodeIdToIndexMap = HashMap<String, Node>()
         val g = ChannelNetwork()
 
@@ -39,7 +41,7 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String)
                 continue
             }
 
-            val n = ParticipantNode(i, g)
+            val n = ParticipantNodeAlt(i, g)
             g.graph.addVertex(n)
             nodes.add(n)
             nodeIdToIndexMap.put(jsonNodes[i].id, n)
@@ -53,6 +55,8 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String)
             if (srcNode == null || dstNode == null) {
                 sourceDestNotFound++
                 continue
+            } else if (srcNode == dstNode) {
+                println("Self-loop found!")
             }
 
             g.addChannel(srcNode, dstNode, 2, 5) // Temporarily hardcoded balances
@@ -60,7 +64,18 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String)
 
         println("Read ${jsonNodes.size} nodes of which $duplicateNodeId were invalid")
         println("Read ${jsonChannels.size} channels of which $sourceDestNotFound could not be matched to a node src/dst")
+        analysis(g)
 
         return Pair(g, nodes)
+    }
+
+    fun analysis (g: ChannelNetwork) {
+        val scAlg = KosarajuStrongConnectivityInspector<Node, DefaultWeightedEdge>(g.graph)
+        val stronglyConnectedSubgraphs = scAlg.getStronglyConnectedComponents();
+
+        println("Strongly connected components:")
+        for (i in 0 until stronglyConnectedSubgraphs.size) {
+            println("$i - Size: " + stronglyConnectedSubgraphs[i].vertexSet().size)
+        }
     }
 }

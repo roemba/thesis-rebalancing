@@ -1,5 +1,9 @@
 package roemer.rebalancing
 
+enum class LEVEL {
+    DEBUG, INFO, WARN, ERROR
+}
+
 class Logger(val vertex: Node) {
     val ANSI_RESET = "\u001B[0m";
     val ANSI_BLACK = "\u001B[30m";
@@ -11,11 +15,32 @@ class Logger(val vertex: Node) {
     val ANSI_CYAN = "\u001B[36m";
     val ANSI_WHITE = "\u001B[37m";
     val colors = arrayOf(ANSI_RED, ANSI_GREEN, ANSI_YELLOW, ANSI_BLUE, ANSI_PURPLE, ANSI_CYAN, ANSI_WHITE)
+    val logLevel = LEVEL.WARN
     
-    fun log(s: String) {
+    fun debug(s: Any) {
+        log(s, LEVEL.DEBUG)
+    }
+
+    fun info(s: Any) {
+        log(s, LEVEL.INFO)
+    }
+
+    fun warn(s: Any) {
+        log(s, LEVEL.WARN)
+    }
+
+    fun error(s: Any) {
+        log(s, LEVEL.ERROR)
+    }
+
+    fun log(s: Any, l: LEVEL) {
         val color = colors[vertex.id % colors.size]
-        if (vertex.id == 8164) {
-            println("$color$vertex: $s $ANSI_RESET")
+
+        if (l >= logLevel) {
+            if (true || vertex.id in arrayOf(1975, 2769)) {
+                println("$color$l: $vertex - $s $ANSI_RESET")
+            }
         }
+
     }
 }
