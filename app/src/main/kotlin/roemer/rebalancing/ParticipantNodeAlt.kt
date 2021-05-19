@@ -2,8 +2,17 @@ package roemer.rebalancing
 
 import java.util.UUID
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
 
-class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id, g, totalFunds) {
+data class ParticipantFindingResult (
+    val executionId: UUID,
+    val finalParticipants: Set<UUID>,
+    val acceptedEdges: Set<PaymentChannel>
+)
+
+open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id, g, totalFunds) {
     var awake = false
     var started = false
     var executionId: UUID? = null
@@ -14,10 +23,10 @@ class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node
     var invitedEdges: MutableSet<PaymentChannel> = HashSet()
     var nOfExpectedResponses = 0
     var deniedEdges: MutableSet<PaymentChannel> = HashSet()
-    var overalSuccess = false
-    var finalParticipants: MutableSet<UUID>? = null
     var receivedResponses = 0
     var sendFinalList = false
+    var result: ParticipantFindingResult? = null
+    var resultReadyChannel: Channel<Boolean> = Channel(0) // Rendezvous channel
     
     override suspend fun sortMessage (message: Message) {
         when (message.type) {
@@ -31,7 +40,7 @@ class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node
         }
     }
 
-    suspend fun startFindingParticipants(hopCount: Int) {
+    suspend fun findParticipants(hopCount: Int): Boolean {
         this.awake = true
         this.started = true
         executionId = UUID.randomUUID()
@@ -47,6 +56,8 @@ class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node
             invitedEdges.add(channel)
             nOfExpectedResponses++
         }
+
+        return resultReadyChannel.receive()
     } 
 
     suspend fun handleInviteMessage(mes: InviteParticipantMessage) {
@@ -199,18 +210,25 @@ class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node
 
     suspend fun terminate(success: Boolean, reason: String = "Unknown") {
         if (success) {
-            // End result: participants and acceptedEdges
+            // End result: participants and acceptedEdges, do not reset yet
             logger.info("Finished with participants size: ${participants.size}")
-            overalSuccess = true
-            finalParticipants = participants
             if (!(this.anonId in participants)) {
                 logger.error("I have not been put up in the participants list!")
             }
+            
+            result = ParticipantFindingResult(executionId!!, participants.toSet(), acceptedEdges.toSet())
+
+            if (this.started) {
+                resultReadyChannel.send(true)
+            }
         } else {
             logger.info("Finished but was not successfull because: $reason")
+
+            if (this.started) {
+                resultReadyChannel.send(false)
+            }
+            reset()
         }
-        
-        reset()
     }
 
     fun reset() {

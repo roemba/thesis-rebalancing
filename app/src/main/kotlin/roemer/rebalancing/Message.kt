@@ -5,7 +5,7 @@ import org.jgrapht.graph.DefaultWeightedEdge
 import java.util.UUID
 
 enum class MessageTypes {
-    REQ_TX, EXEC_TX, ABORT_TX, INVITE_P, ACCEPT_P, FINISH_P, DENY_P
+    REQ_TX, EXEC_TX, ABORT_TX, INVITE_P, ACCEPT_P, FINISH_P, DENY_P, COMMIT_R, REQUEST_R, SUCCESS_R, UPDATE_R, FAIL_R
 }
 
 abstract class Message(
@@ -101,5 +101,73 @@ class FinishParticipantMessage(
 ): AcceptParticipantMessage(type, sender, recipient, channel, executionId, participants) {
     override fun toString(): String {
         return "FinishParticipantMessage(sender=$sender, recipient=$recipient, executionId=$executionId)"//, participants=$participants)"
+    }
+}
+
+open class RebalancingMessage(
+    type: MessageTypes,
+    sender: Node,
+    recipient: Node,
+    channel: PaymentChannel,
+    val startId: UUID,
+    val executionId: UUID
+    ): Message(type, sender, recipient, channel) {
+    override fun toString(): String {
+        return "RebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient)"
+    }
+}
+
+class RequestRebalancingMessage(
+    type: MessageTypes,
+    sender: Node,
+    recipient: Node,
+    channel: PaymentChannel,
+    startId: UUID,
+    executionId: UUID,
+    val seenSet: Set<UUID>,
+    ): RebalancingMessage(type, sender, recipient, channel, startId, executionId) {
+    override fun toString(): String {
+        return "RequestRebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient, seenSet=$seenSet)"
+    }
+}
+
+open class SuccessRebalancingMessage(
+    type: MessageTypes,
+    sender: Node,
+    recipient: Node,
+    channel: PaymentChannel,
+    startId: UUID,
+    executionId: UUID,
+    val tagList: List<TagDemandPair>,
+    ): RebalancingMessage(type, sender, recipient, channel, startId, executionId) {
+    override fun toString(): String {
+        return "SuccessRebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient, tagList=$tagList)"
+    }
+}
+
+class CommitRebalancingMessage(
+    type: MessageTypes,
+    sender: Node,
+    recipient: Node,
+    channel: PaymentChannel,
+    startId: UUID,
+    tagList: List<TagDemandPair>,
+    executionId: UUID
+    ): SuccessRebalancingMessage(type, sender, recipient, channel, startId, executionId, tagList) {
+    override fun toString(): String {
+        return "CommitRebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient, tagList=$tagList)"
+    }
+}
+
+class FailRebalancingMessage(
+    type: MessageTypes,
+    sender: Node,
+    recipient: Node,
+    channel: PaymentChannel,
+    val startId: UUID?,
+    val executionId: UUID?
+    ): Message(type, sender, recipient, channel) {
+    override fun toString(): String {
+        return "FailRebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient)"
     }
 }
