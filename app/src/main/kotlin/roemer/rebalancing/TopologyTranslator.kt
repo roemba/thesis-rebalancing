@@ -19,7 +19,7 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String)
         this.channelResourcePath = this::class.java.classLoader.getResource(channelFileName)!!.file
     }
 
-    fun translate(): Pair<ChannelNetwork, List<ParticipantNodeAlt>> {
+    fun translate(): Pair<ChannelNetwork, List<RebalancingNode>> {
         data class JSONNode (val id: String)
         data class JSONChannel (val id: String, val source: String, val target: String)
 
@@ -30,7 +30,7 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String)
         val jsonChannels: List<JSONChannel> = mapper.readValue(File(channelResourcePath))
 
 
-        val nodes: MutableList<ParticipantNodeAlt> = ArrayList()
+        val nodes: MutableList<RebalancingNode> = ArrayList()
         val nodeIdToIndexMap = HashMap<String, Node>()
         val g = ChannelNetwork()
 
@@ -41,7 +41,7 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String)
                 continue
             }
 
-            val n = ParticipantNodeAlt(i, g)
+            val n = RebalancingNode(i, g)
             g.graph.addVertex(n)
             nodes.add(n)
             nodeIdToIndexMap.put(jsonNodes[i].id, n)

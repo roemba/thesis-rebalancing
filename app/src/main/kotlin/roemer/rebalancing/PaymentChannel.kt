@@ -130,7 +130,7 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
     }
 
     @Throws(IllegalStateException::class)
-    suspend fun getDemand(vertex: Node): Int {
+    suspend fun getDemand(vertex: Node, absolute: Boolean = false): Int {
         mutex.withLock {
             this.locked = true
 
@@ -138,14 +138,16 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
                 throw IllegalStateException("Cannot lock channel as there are still pending transactions, check back later!")
             }
 
-            return getCurrentDemand(vertex)
+            return getCurrentDemand(vertex, absolute)
         }
     }
 
-    suspend fun getCurrentDemand(vertex: Node): Int {
+    suspend fun getCurrentDemand(vertex: Node, absolute: Boolean = false): Int {
         var diff = (this.balance2 - this.balance1) / 2
 
-        if (vertex === this.node2) {
+        if (absolute) {
+            return Math.abs(diff)
+        } else if (vertex === this.node2) {
             diff *= -1
         }
 

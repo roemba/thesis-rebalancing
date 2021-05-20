@@ -18,9 +18,9 @@ import guru.nidi.graphviz.engine.Format
 class GraphHolder {
     val paymentChannels: MutableList<PaymentChannel> = ArrayList()
     val g: ChannelNetwork
-    val nodes: List<ParticipantNodeAlt>
+    val nodes: List<RebalancingNode>
 
-    constructor (g: ChannelNetwork, nodes: List<ParticipantNodeAlt>) {
+    constructor (g: ChannelNetwork, nodes: List<RebalancingNode>) {
         this.g = g
         this.nodes = nodes
     }
@@ -44,9 +44,9 @@ class GraphHolder {
         val nOfNodes = graphFileReader.nextInt()
         graphFileReader.nextLine()
 
-        val nodes: MutableList<ParticipantNodeAlt> = ArrayList()
+        val nodes: MutableList<RebalancingNode> = ArrayList()
         for (i in 0 until nOfNodes) {
-            val n = ParticipantNodeAlt(i, g)
+            val n = RebalancingNode(i, g)
             g.graph.addVertex(n)
             nodes.add(n)
         }
@@ -87,7 +87,7 @@ class GraphHolder {
 
 
             // }
-            nodes[0].startFindingParticipants(100)
+            println(nodes[0].splitEqually(112, intArrayOf(10, 30, 20, 3, 50)).contentToString())
             // nodes[4].startFindingParticipants(20)
 
             // try {
@@ -96,30 +96,30 @@ class GraphHolder {
             //     println(e)
             // }
             
-            outerLoop@ while (true) {
-                println("Still running, will check in 5s...")
-                var nOfAwake = 0
-                val seenPartSizes: MutableSet<Int> = HashSet() 
-                for (i in 0 until nodes.size) {
-                    if (nodes[i].awake) {
-                        nOfAwake++
-                    }
-                    if (nodes[i].overalSuccess) {
-                        seenPartSizes.add(nodes[i].finalParticipants!!.size)
-                    }
-                }
-                println("Awake nodes: $nOfAwake")
-                for (i in seenPartSizes) {
-                    println("Seen: $i")
-                }
-                delay(5000)
-                // for (i in 0 until nodes.size) {
-                //     if (!nodes[i].messageChannel.isEmpty) {
-                //         continue@outerLoop
-                //     }
-                // }
-                // break
-            }
+            // outerLoop@ while (true) {
+            //     println("Still running, will check in 5s...")
+            //     var nOfAwake = 0
+            //     val seenPartSizes: MutableSet<Int> = HashSet() 
+            //     for (i in 0 until nodes.size) {
+            //         if (nodes[i].awake) {
+            //             nOfAwake++
+            //         }
+            //         if (nodes[i].overalSuccess) {
+            //             seenPartSizes.add(nodes[i].finalParticipants!!.size)
+            //         }
+            //     }
+            //     println("Awake nodes: $nOfAwake")
+            //     for (i in seenPartSizes) {
+            //         println("Seen: $i")
+            //     }
+            //     delay(5000)
+            //     // for (i in 0 until nodes.size) {
+            //     //     if (!nodes[i].messageChannel.isEmpty) {
+            //     //         continue@outerLoop
+            //     //     }
+            //     // }
+            //     // break
+            // }
 
             delay(30000)
             println()

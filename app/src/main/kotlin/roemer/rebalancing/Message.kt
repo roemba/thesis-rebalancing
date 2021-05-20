@@ -117,7 +117,7 @@ open class RebalancingMessage(
     }
 }
 
-class RequestRebalancingMessage(
+open class RequestRebalancingMessage(
     type: MessageTypes,
     sender: Node,
     recipient: Node,
@@ -128,6 +128,20 @@ class RequestRebalancingMessage(
     ): RebalancingMessage(type, sender, recipient, channel, startId, executionId) {
     override fun toString(): String {
         return "RequestRebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient, seenSet=$seenSet)"
+    }
+}
+
+class UpdateRebalancingMessage(
+    type: MessageTypes,
+    sender: Node,
+    recipient: Node,
+    channel: PaymentChannel,
+    startId: UUID,
+    executionId: UUID,
+    seenSet: Set<UUID>,
+    ): RequestRebalancingMessage(type, sender, recipient, channel, startId, executionId, seenSet) {
+    override fun toString(): String {
+        return "UpdateRebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient, seenSet=$seenSet)"
     }
 }
 
