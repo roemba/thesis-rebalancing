@@ -43,7 +43,7 @@ open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
         for (neighbour in neighbours) {
             if (neighbour === message.recipient) {
                 val randomDelay = SeededRandom.random.nextLong(200)
-                // delay(randomDelay)
+                delay(randomDelay)
                 if (true || message.recipient.id in arrayOf(8259, 2019) && message.sender.id in arrayOf(8259, 2019)) {
                     logger.debug("Send $message")
                 }

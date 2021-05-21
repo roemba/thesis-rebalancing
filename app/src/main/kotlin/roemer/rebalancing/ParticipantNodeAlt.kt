@@ -12,17 +12,18 @@ data class ParticipantFindingResult (
     val acceptedEdges: Set<PaymentChannel>
 )
 
-open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id, g, totalFunds) {
+open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0, val randomDeny: Boolean = false) : Node(id, g, totalFunds) {
     var awake = false
     var started = false
     var executionId: UUID? = null
     var anonId: UUID? = null
     var participants: MutableSet<UUID> = HashSet()
-    var acceptedEdges: MutableSet<PaymentChannel> = HashSet()
+    var edgesThatAcceptedInvite: MutableSet<PaymentChannel> = HashSet()
     var parentEdge: PaymentChannel? = null
     var invitedEdges: MutableSet<PaymentChannel> = HashSet()
     var nOfExpectedResponses = 0
     var deniedEdges: MutableSet<PaymentChannel> = HashSet()
+    var edgesIAccepted: MutableSet<PaymentChannel> = HashSet()
     var receivedResponses = 0
     var sendFinalList = false
     var result: ParticipantFindingResult? = null
@@ -40,11 +41,11 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0) :
         }
     }
 
-    suspend fun findParticipants(hopCount: Int): Boolean {
+    suspend fun findParticipants(hopCount: Int) {
         this.awake = true
         this.started = true
         executionId = UUID.randomUUID()
-        anonId = UUID.randomUUID()
+        anonId = SeededRandom.getRandomUUID()
         participants.add(anonId!!)
 
         logger.info("Starting to find participants with execution id: $executionId and participant id: $anonId")
@@ -56,12 +57,10 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0) :
             invitedEdges.add(channel)
             nOfExpectedResponses++
         }
-
-        return resultReadyChannel.receive()
     } 
 
     suspend fun handleInviteMessage(mes: InviteParticipantMessage) {
-        if (SeededRandom.random.nextInt(10) < 2) {
+        if (randomDeny && SeededRandom.random.nextInt(10) < 2) {
             deniedEdges.add(mes.channel)
         }
 
@@ -79,13 +78,14 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0) :
         // If not already claimed, become claimed
         if (executionId == null) {
             executionId = mes.executionId
-            anonId = UUID.randomUUID()
+            anonId = SeededRandom.getRandomUUID()
             participants.add(anonId!!)
             parentEdge = mes.channel
             logger.info("Claimed by execution id: $executionId using participant id: $anonId, parentEdge: $parentEdge")
         
             // If hop count is 0, terminate search
             if (mes.hopCount - 1 == 0) {
+                edgesIAccepted.add(mes.channel)
                 return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants))
             }
             
@@ -105,11 +105,13 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0) :
             }
 
             if ((this.paymentChannels.size - deniedEdges.size) == 1) {
+                edgesIAccepted.add(mes.channel)
                 return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants))
             }
         }
 
         if (mes.channel !== parentEdge) {
+            edgesIAccepted.add(mes.channel)
             return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants))
         }
     }
@@ -130,7 +132,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0) :
 
         val senderChannel = mes.channel
         invitedEdges.remove(senderChannel)
-        acceptedEdges.add(senderChannel)
+        edgesThatAcceptedInvite.add(senderChannel)
 
         handleResponses()
     }
@@ -140,13 +142,14 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0) :
             return
         }
 
-        if (!(mes.channel in invitedEdges) && !(mes.channel in acceptedEdges)) {
+        if (!(mes.channel in invitedEdges) && !(mes.channel in edgesThatAcceptedInvite)) {
             logger.warn("Already received deny response on this edge!")
             return
         }
         
         invitedEdges.remove(mes.channel)
-        acceptedEdges.remove(mes.channel)
+        edgesThatAcceptedInvite.remove(mes.channel)
+        edgesIAccepted.remove(mes.channel)
 
         handleResponses()
     }
@@ -170,16 +173,17 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0) :
 
         if (nOfExpectedResponses == 0 && !sendFinalList) {
             sendFinalList = true
-            logger.debug("nOfInvitedEdges: ${this.invitedEdges.size} nOfAcceptedEdges: ${this.acceptedEdges.size}")
+            logger.debug("nOfInvitedEdges: ${this.invitedEdges.size} nOfAcceptedEdges: ${this.edgesThatAcceptedInvite.size}")
 
             if (invitedEdges.isEmpty()) {
-                if (this.acceptedEdges.isNotEmpty()) {
+                if (this.edgesThatAcceptedInvite.isNotEmpty()) {
                     if (this.started) {
-                        for (channel in this.acceptedEdges) {
+                        for (channel in this.edgesThatAcceptedInvite) {
                             sendMessage(FinishParticipantMessage(MessageTypes.FINISH_P, this, channel.getOppositeNode(this), channel, executionId!!, participants))
                         }
                         return terminate(true)
                     } else {
+                        edgesIAccepted.add(parentEdge!!)
                         sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, parentEdge!!.getOppositeNode(this), parentEdge!!, executionId!!, participants))
                     }
                 } else {
@@ -198,7 +202,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0) :
 
         participants = mes.participants.toMutableSet()
 
-        for (channel in this.acceptedEdges) {
+        for (channel in this.edgesThatAcceptedInvite) {
             if (channel != mes.channel) {
                 sendMessage(FinishParticipantMessage(MessageTypes.FINISH_P, this, channel.getOppositeNode(this), channel, executionId!!, participants))
             }
@@ -216,17 +220,13 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0) :
                 logger.error("I have not been put up in the participants list!")
             }
             
-            result = ParticipantFindingResult(executionId!!, participants.toSet(), acceptedEdges.toSet())
-
-            if (this.started) {
-                resultReadyChannel.send(true)
-            }
+            result = ParticipantFindingResult(executionId!!, participants.toSet(), edgesThatAcceptedInvite.plus(edgesIAccepted))
+            awake = false // Prevent participant discovery from doing anything else
+            resultReadyChannel.send(true)
         } else {
             logger.info("Finished but was not successfull because: $reason")
 
-            if (this.started) {
-                resultReadyChannel.send(false)
-            }
+            resultReadyChannel.send(false)
             reset()
         }
     }
@@ -237,7 +237,8 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0) :
         executionId = null
         anonId = null
         participants  = HashSet()
-        acceptedEdges = HashSet()
+        edgesThatAcceptedInvite = HashSet()
+        edgesIAccepted = HashSet()
         invitedEdges = HashSet()
         parentEdge = null
         nOfExpectedResponses = 0

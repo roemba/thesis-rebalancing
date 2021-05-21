@@ -5,7 +5,7 @@ import org.jgrapht.graph.DefaultWeightedEdge
 import java.util.UUID
 
 enum class MessageTypes {
-    REQ_TX, EXEC_TX, ABORT_TX, INVITE_P, ACCEPT_P, FINISH_P, DENY_P, COMMIT_R, REQUEST_R, SUCCESS_R, UPDATE_R, FAIL_R
+    REQ_TX, EXEC_TX, ABORT_TX, INVITE_P, ACCEPT_P, FINISH_P, DENY_P, COMMIT_R, REQUEST_R, SUCCESS_R, UPDATE_R, FAIL_R, EXEC_R
 }
 
 abstract class Message(
@@ -165,9 +165,10 @@ class CommitRebalancingMessage(
     recipient: Node,
     channel: PaymentChannel,
     startId: UUID,
-    tagList: List<TagDemandPair>,
-    executionId: UUID
-    ): SuccessRebalancingMessage(type, sender, recipient, channel, startId, executionId, tagList) {
+    executionId: UUID,
+    val tagList: List<TagDemandHTLCPair>,
+    val tagTxList: List<TagTransactionPair>
+    ): RebalancingMessage(type, sender, recipient, channel, startId, executionId) {
     override fun toString(): String {
         return "CommitRebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient, tagList=$tagList)"
     }
@@ -183,5 +184,20 @@ class FailRebalancingMessage(
     ): Message(type, sender, recipient, channel) {
     override fun toString(): String {
         return "FailRebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient)"
+    }
+}
+
+class ExecuteRebalancingMessage(
+    type: MessageTypes,
+    sender: Node,
+    recipient: Node,
+    channel: PaymentChannel,
+    startId: UUID,
+    executionId: UUID,
+    val tag: UUID,
+    val preImage: String
+    ): RebalancingMessage(type, sender, recipient, channel, startId, executionId) {
+    override fun toString(): String {
+        return "ExecuteRebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient, tag=$tag, preImage=$preImage)"
     }
 }

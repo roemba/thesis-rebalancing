@@ -1,7 +1,11 @@
 package roemer.rebalancing
 
 import java.util.UUID
+import java.security.MessageDigest
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 enum class RoundState {
     WAIT, REQ, SUC, COM
@@ -10,12 +14,24 @@ enum class RoundState {
 data class CycleChannelPair(
     val endChannel: PaymentChannel,
     val startChannel: PaymentChannel,
-    val demand: Int
+    val demand: Int,
+    val completed: Boolean
 )
 
 data class TagDemandPair(
     val tag: UUID,
     val demand: Int
+)
+
+data class TagDemandHTLCPair(
+    val tag: UUID,
+    val demand: Int,
+    val htlc: ByteArray?
+)
+
+data class TagTransactionPair(
+    val tag: UUID,
+    val transaction: Transaction
 )
 
 class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : ParticipantNodeAlt(id, g, totalFunds) {
@@ -26,6 +42,7 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
     var cycleChannelPairsMap: MutableMap<UUID, CycleChannelPair> = HashMap()
     var receivedRequests: MutableList<RequestRebalancingMessage> = ArrayList()
     var receivedCommits: MutableList<CommitRebalancingMessage> = ArrayList()
+    var receivedCycleCommits: MutableList<CommitRebalancingMessage> = ArrayList()
     var receivedSuccesses: MutableList<SuccessRebalancingMessage> = ArrayList()
     var orderOfStarting: List<UUID>? = null
     var roundIndex = 0
@@ -34,6 +51,12 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
     var incomingDemandEdges: MutableSet<PaymentChannel> = HashSet()
     var seenSet: MutableSet<UUID> = HashSet()
     var G: MutableMap<UUID, Pair<Int, PaymentChannel>> = HashMap()
+    var htlcMap: MutableMap<UUID, String> = HashMap()
+    var tagTransactionMap: MutableMap<UUID, Transaction> = HashMap()
+    var rebalancingReadyChannel: Channel<Boolean> = Channel(0) // Rendezvous channel
+
+    val lock = Mutex()
+    val digest = MessageDigest.getInstance("SHA-256");
     
     override suspend fun sortMessage (message: Message) {
         when (message.type) {
@@ -42,28 +65,42 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
             MessageTypes.SUCCESS_R -> handleSuccessMessage(message as SuccessRebalancingMessage)
             MessageTypes.FAIL_R -> handleFailMessage(message as FailRebalancingMessage)
             MessageTypes.COMMIT_R -> handleCommitMessage(message as CommitRebalancingMessage)
+            MessageTypes.EXEC_R -> handleExecuteRebalancingMessage(message as ExecuteRebalancingMessage)
             else -> {
                 super.sortMessage(message)
             }
         }
     }
 
-    suspend fun rebalance(hopCount: Int): Boolean {
-        val foundParticipants = this.findParticipants(hopCount)
-        if (!foundParticipants) {
-            return false
+    suspend fun rebalance(hopCount: Int) {
+        logger.info("Starting participant discovery before rebalancing")
+
+        this.findParticipants(hopCount)
+    }
+
+    suspend fun rebalancingClient() {
+        while (true) {
+            val foundParticipantsResult = resultReadyChannel.receive()
+
+            logger.info("Participant discovery finished with result $foundParticipantsResult, ${result!!.acceptedEdges}")
+
+            if (!foundParticipantsResult) {
+                continue
+            }
+            
+            this.wakeUp()
+
+            if (this.orderOfStarting!![0] == this.anonId) {
+                this.startRound()
+            }
+
+            rebalancingReadyChannel.receive()
         }
-
-        this.wakeUp()
-
-        if (this.orderOfStarting!![0] == this.anonId) {
-            this.startRound()
-        }
-
-        return true
     }
 
     suspend fun startRound() {
+        logger.info("$anonId is starting the round!")
+
         roundState = RoundState.REQ
         for (channel in outgoingDemandEdges) {
             val channelAnonId = UUID.randomUUID()
@@ -76,23 +113,28 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
     }
 
     suspend fun wakeUp(): Boolean {
-        if (this.rebalancingAwake) {
-            return true // Already awake
-        }
-
-        this.orderOfStarting = this.result!!.finalParticipants.toList().sorted()
-        this.rebalancingAwake = true
-
-        for (channel in this.result!!.acceptedEdges) {
-            val demand = channel.getDemand(this)
-            if (demand > 0) {
-                outgoingDemandEdges.add(channel)
-            } else {
-                incomingDemandEdges.add(channel)
+        lock.withLock { 
+            if (this.rebalancingAwake) {
+                return true // Already awake
             }
-        }
 
-        return true
+            logger.debug("I'm waking up!")
+
+            this.orderOfStarting = this.result!!.finalParticipants.toList().sorted()
+            this.rebalancingAwake = true
+
+            for (channel in this.result!!.acceptedEdges) {
+                val demand = channel.getDemand(this)
+                logger.debug("Sorting $channel with balance $demand")
+                if (demand < 0) {
+                    outgoingDemandEdges.add(channel)
+                } else {
+                    incomingDemandEdges.add(channel)
+                }
+            }
+
+            return true
+        }
     }
 
     suspend fun checkMessage(mes: RebalancingMessage, notRequest: Boolean = true): Boolean {
@@ -127,7 +169,7 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
 
             val cycleTag = UUID.randomUUID()
             val channelDemand = mes.channel.getDemand(this, true)
-            cycleChannelPairsMap.put(cycleTag, CycleChannelPair(mes.channel, anonIdChannelMap.get(channelAnonId)!!, channelDemand))
+            cycleChannelPairsMap.put(cycleTag, CycleChannelPair(mes.channel, anonIdChannelMap.get(channelAnonId)!!, channelDemand, false))
             sendMessage(SuccessRebalancingMessage(
                 MessageTypes.SUCCESS_R, this, mes.sender, mes.channel, mes.startId, 
                 mes.executionId, listOf(TagDemandPair(cycleTag, channelDemand))
@@ -242,14 +284,19 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
         if (receivedSuccesses.isNotEmpty()) {
             for (success in receivedSuccesses) {
                 for (tagDemandPair in success.tagList) {
-                    if (tagDemandPair.tag in cycleChannelPairsMap && tagDemandPair.demand > cycleChannelPairsMap.get(tagDemandPair.tag)!!.demand) {
-                        cycleChannelPairsMap.replace(tagDemandPair.tag, 
-                            CycleChannelPair(
-                                cycleChannelPairsMap.get(tagDemandPair.tag)!!.endChannel, 
-                                success.channel, 
-                                tagDemandPair.demand)
-                        )
+                    if (tagDemandPair.tag in cycleChannelPairsMap) { 
+                        val entry = cycleChannelPairsMap.get(tagDemandPair.tag)!!
+                        if (!entry.completed || tagDemandPair.demand > entry.demand) {
+                            cycleChannelPairsMap.replace(tagDemandPair.tag, 
+                                CycleChannelPair(
+                                    entry.endChannel, 
+                                    success.channel, 
+                                    tagDemandPair.demand,
+                                    true)
+                            )
+                        }
                     } else {
+                        logger.debug("Tag not in cyleMap, so putting it in G")
                         if (!(tagDemandPair.tag in G)) {
                             G.put(tagDemandPair.tag, Pair(tagDemandPair.demand, success.channel))
                         }
@@ -262,7 +309,6 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
 
             if (iStartedRound()) {
                 commitSource()
-                nextRound()
             } else {
                 val F = G.entries.toList()
                 for (request in receivedRequests) {
@@ -286,16 +332,35 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
     }
 
     suspend fun commitSource() {
-        val P: MutableMap<PaymentChannel, MutableList<TagDemandPair>> = HashMap()
+        val P: MutableMap<PaymentChannel, Pair<MutableList<TagDemandHTLCPair>, MutableList<TagTransactionPair>>> = HashMap()
         for (entry in cycleChannelPairsMap.entries) {
-            val pairs = P.getOrPut(entry.value.startChannel, { ArrayList() })
-            pairs.add(TagDemandPair(entry.key, entry.value.demand))
+            val pairs = P.getOrPut(entry.value.startChannel, { Pair(ArrayList(), ArrayList()) })
+
+            var htlc: ByteArray? = null
+            if (entry.value.demand > 0) {
+                val preImage = UUID.randomUUID().toString()
+                htlcMap.put(entry.key, preImage)
+    
+                htlc = digest.digest(preImage.encodeToByteArray())
+                val tx = Transaction(UUID.randomUUID(), entry.value.demand, this, entry.value.startChannel.getOppositeNode(this))
+                tagTransactionMap.put(entry.key, tx)
+    
+                if (!entry.value.startChannel.requestTx(tx, htlc, true)) {
+                    throw Error("Channel did not allow me to request TX!")
+                }
+
+                pairs.second.add(TagTransactionPair(entry.key, tx))
+            }
+
+            
+            pairs.first.add(TagDemandHTLCPair(entry.key, entry.value.demand, htlc))
+            
         }
         for (channel in outgoingDemandEdges) {
             if (channel in P) {
-                sendMessage(CommitRebalancingMessage(MessageTypes.COMMIT_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), P.get(channel)!!, this.executionId!!))
+                sendMessage(CommitRebalancingMessage(MessageTypes.COMMIT_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), this.executionId!!, P.get(channel)!!.first, P.get(channel)!!.second))
             } else {
-                sendMessage(CommitRebalancingMessage(MessageTypes.COMMIT_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), ArrayList(), this.executionId!!))
+                sendMessage(CommitRebalancingMessage(MessageTypes.COMMIT_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), this.executionId!!, ArrayList(), ArrayList()))
             }
         }
     }
@@ -311,26 +376,67 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
             receivedCommits.add(mes)
 
             if (receivedCommits.size == receivedRequests.size) { // Forward commits
-                val K: MutableMap<PaymentChannel, MutableList<TagDemandPair>> = HashMap()
+                logger.info("Received all commits from requesting channels")
+                val K: MutableMap<PaymentChannel, MutableList<TagDemandHTLCPair>> = HashMap()
                 for (commit in receivedCommits) {
                     for (tagDemandPair in commit.tagList) {
-                        val pairs = K.getOrPut(G.get(tagDemandPair)!!.second) { ArrayList() }
+                        val pairs = K.getOrPut(G.get(tagDemandPair.tag)!!.second) { ArrayList() }
                         pairs.add(tagDemandPair)
                     }
                 }
                 for (entry in cycleChannelPairsMap.entries) {
+                    var htlc: ByteArray? = null
+                    if (entry.value.demand > 0) {
+                        val preImage = UUID.randomUUID().toString()
+                        htlcMap.put(entry.key, preImage)
+    
+                        htlc = digest.digest(preImage.encodeToByteArray())
+                    }
+
                     val pairs = K.getOrPut(entry.value.startChannel, { ArrayList() })
-                    pairs.add(TagDemandPair(entry.key, entry.value.demand))
+                    pairs.add(TagDemandHTLCPair(entry.key, entry.value.demand, htlc))
                 }
                 for (channel in outgoingDemandEdges) {
                     if (channel in K) {
-                        sendMessage(CommitRebalancingMessage(MessageTypes.COMMIT_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), K.get(channel)!!, this.executionId!!))
+                        val tagTxList: MutableList<TagTransactionPair> = ArrayList()
+                        for (pair in K.get(channel)!!) {
+                            if (pair.htlc != null) {
+                                val tx = Transaction(UUID.randomUUID(), pair.demand, this, channel.getOppositeNode(this))
+                                tagTransactionMap.put(pair.tag, tx)
+                                if (!channel.requestTx(tx, pair.htlc, true)) {
+                                    throw Error("Channel did not allow me to request TX!")
+                                }
+                                tagTxList.add(TagTransactionPair(pair.tag, tx))
+                            }
+                        }
+                        sendMessage(CommitRebalancingMessage(MessageTypes.COMMIT_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), this.executionId!!, K.get(channel)!!, tagTxList))
                     } else {
-                        sendMessage(CommitRebalancingMessage(MessageTypes.COMMIT_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), ArrayList(), this.executionId!!))
+                        sendMessage(CommitRebalancingMessage(MessageTypes.COMMIT_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), this.executionId!!, ArrayList(), ArrayList()))
                     }
                 }
-                nextRound()
             }
+        } else {
+            receivedCycleCommits.add(mes)
+        }
+
+        if (receivedCommits.size + receivedCycleCommits.size == receivedRequests.size + cycleChannelPairsMap.size) {
+            logger.info("Received all commits from requesting and cycle channels")
+
+            if (iStartedRound()) {
+                
+            }
+
+            nextRound()
+        }
+    }
+
+    suspend fun handleExecuteRebalancingMessage(mes: ExecuteRebalancingMessage) {
+        if (!this.checkMessage(mes)) { return }
+
+        roundMessageHistory.add(mes)
+
+        if (mes.tag in tagTransactionMap) {
+            throw Error("Tag not found in transactionMap while executing")
         }
     }
 
@@ -383,7 +489,16 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
     }
 
     suspend fun nextRound() {
-        logger.debug("Going to next round!")
+        roundIndex++
+        logger.debug("Going to round $roundIndex!")
+        
+        val test1 = digest.digest("test".encodeToByteArray())
+        val test2 = digest.digest("test".encodeToByteArray())
+        val test3 = digest.digest("test2".encodeToByteArray())
+        logger.debug("Test1: ${test1.toString()}, test2: $test2")
+        logger.debug(test1 contentEquals test2)
+        logger.debug(!(test1 contentEquals test3))
+
     }
 
     suspend fun terminateRebalancing(success: Boolean) {

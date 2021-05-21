@@ -67,6 +67,7 @@ class GraphHolder {
         runBlocking {
             for (node in nodes) {
                 launch { node.receiveMessage() }
+                launch { node.rebalancingClient() }
             }
             println("Continued while nodes are waiting")
 
@@ -87,7 +88,9 @@ class GraphHolder {
 
 
             // }
-            println(nodes[0].splitEqually(112, intArrayOf(10, 30, 20, 3, 50)).contentToString())
+
+            nodes[0].rebalance(20)
+            // println(nodes[0].splitEqually(112, intArrayOf(10, 30, 20, 3, 50)).contentToString())
             // nodes[4].startFindingParticipants(20)
 
             // try {

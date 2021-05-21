@@ -16,6 +16,8 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
         private set
     var pendingTransactions = HashSet<Transaction>()
         private set
+    var htlcTransactions = HashMap<Transaction, ByteArray>()
+        private set
     private val mutex = Mutex()
     var locked: Boolean = false
         private set
@@ -33,15 +35,13 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
         return vertex === this.node1 || vertex === this.node2
     }
 
-    suspend fun requestTx(tx: Transaction, overrideLock: Boolean = false): Boolean {
+    suspend fun requestTx(tx: Transaction, htlc: ByteArray?, overrideLock: Boolean = false): Boolean {
         if (!(this.isChannelNode(tx.from) && this.isChannelNode(tx.to))) {
             throw IllegalArgumentException("The given nodes do not belong to this channel!")
         }
 
         mutex.withLock {
-            if (overrideLock) {
-                this.locked = false
-            } else if (this.locked) {
+            if (!overrideLock && this.locked) {
                 return false
             }
 
@@ -70,14 +70,20 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
             assert(this.totalFunds == this.pendingBalance1 + this.pendingBalance2)
 
             pendingTransactions.add(tx)
+            if (htlc != null) {
+                htlcTransactions.put(tx, htlc)
+            }
             println("Gave commit for $tx on $this")
             return true
         }
     }
 
-    suspend fun executeTx(tx: Transaction): Boolean {
+    suspend fun executeTx(tx: Transaction, htlc: ByteArray): Boolean {
         mutex.withLock {
             if (tx !in pendingTransactions) {
+                return false
+            } else if (tx in htlcTransactions && !(htlcTransactions.get(tx) contentEquals htlc)) {
+                println("Incorrect htlc was provided to execute transaction!")
                 return false
             }
 
