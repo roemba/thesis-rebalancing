@@ -14,7 +14,7 @@ fun main(args: Array<String>) {
 //    val c = Channel(n1, n2, 100, 50)
 
 //    println(c)
-    val graph = GraphHolder("simple_graph.txt")
+    val graph = GraphHolder("difficult_graph.txt")
     //val graph = GraphHolder("nodes_05-05-2021.json", "channels_05-05-2021.json")
     graph.start()
 }

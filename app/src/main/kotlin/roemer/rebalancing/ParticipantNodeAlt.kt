@@ -164,16 +164,16 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0, v
 
     suspend fun handleResponses() {
         nOfExpectedResponses--
-        if (nOfExpectedResponses < 5) {
-            for (channel in invitedEdges) {
-                logger.debug("Still waiting for response from $channel")
-            }
-        }
+        // if (nOfExpectedResponses < 5) {
+        //     for (channel in invitedEdges) {
+        //         logger.debug("Still waiting for response from $channel")
+        //     }
+        // }
 
 
         if (nOfExpectedResponses == 0 && !sendFinalList) {
             sendFinalList = true
-            logger.debug("nOfInvitedEdges: ${this.invitedEdges.size} nOfAcceptedEdges: ${this.edgesThatAcceptedInvite.size}")
+            // logger.debug("nOfInvitedEdges: ${this.invitedEdges.size} nOfAcceptedEdges: ${this.edgesThatAcceptedInvite.size}")
 
             if (invitedEdges.isEmpty()) {
                 if (this.edgesThatAcceptedInvite.isNotEmpty()) {

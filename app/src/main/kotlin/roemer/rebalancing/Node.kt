@@ -39,7 +39,7 @@ open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
     }
 
     suspend fun sendMessage(message: Message) {
-        val neighbours = Graphs.neighborListOf(g.graph, this)
+        val neighbours = Graphs.neighborListOf(g.graph, this).plus(listOf(this)) // List of neighbours + self
         for (neighbour in neighbours) {
             if (neighbour === message.recipient) {
                 val randomDelay = SeededRandom.random.nextLong(200)

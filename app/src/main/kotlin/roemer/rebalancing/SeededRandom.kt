@@ -5,7 +5,7 @@ import java.util.UUID
 
 class SeededRandom {
     companion object {
-        val random = Random(12312)
+        val random = Random(42)
         var counter = 0
 
         fun getRandomUUID(): UUID {

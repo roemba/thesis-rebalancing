@@ -126,7 +126,7 @@ class GraphHolder {
 
             delay(30000)
             println()
-            // printChannelBalances()
+            printChannelBalances()
             var nOfAwake = 0
             for (i in 0 until nodes.size) {
                 if (nodes[i].awake) {

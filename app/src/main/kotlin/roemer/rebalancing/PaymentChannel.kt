@@ -35,13 +35,14 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
         return vertex === this.node1 || vertex === this.node2
     }
 
-    suspend fun requestTx(tx: Transaction, htlc: ByteArray?, overrideLock: Boolean = false): Boolean {
+    suspend fun requestTx(tx: Transaction, htlc: ByteArray? = null, overrideLock: Boolean = false): Boolean {
         if (!(this.isChannelNode(tx.from) && this.isChannelNode(tx.to))) {
             throw IllegalArgumentException("The given nodes do not belong to this channel!")
         }
 
         mutex.withLock {
             if (!overrideLock && this.locked) {
+                println("Channel $this is locked and no override has been given")
                 return false
             }
 
@@ -61,6 +62,7 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
             }
 
             if (newBalance1 < 0 || newBalance2 < 0) {
+                println("Channel $this has insufficient balance for the transaction $tx")
                 return false
             }
 
@@ -78,11 +80,11 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
         }
     }
 
-    suspend fun executeTx(tx: Transaction, htlc: ByteArray): Boolean {
+    suspend fun executeTx(tx: Transaction, htlc: ByteArray? = null): Boolean {
         mutex.withLock {
             if (tx !in pendingTransactions) {
                 return false
-            } else if (tx in htlcTransactions && !(htlcTransactions.get(tx) contentEquals htlc)) {
+            } else if (tx in htlcTransactions && (htlc == null || !(htlcTransactions.get(tx) contentEquals htlc))) {
                 println("Incorrect htlc was provided to execute transaction!")
                 return false
             }

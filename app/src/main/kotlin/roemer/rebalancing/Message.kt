@@ -167,11 +167,15 @@ class CommitRebalancingMessage(
     startId: UUID,
     executionId: UUID,
     val tagList: List<TagDemandHTLCPair>,
-    val tagTxList: List<TagTransactionPair>
+    val tagTxMap: Map<UUID, Transaction>
     ): RebalancingMessage(type, sender, recipient, channel, startId, executionId) {
     override fun toString(): String {
         return "CommitRebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient, tagList=$tagList)"
     }
+}
+
+enum class FailReason {
+    INCORRECT_ROUND, INCORRECT_EXECUTION_ID, NOT_AWAKE, NO_SUCCESS
 }
 
 class FailRebalancingMessage(
@@ -179,11 +183,12 @@ class FailRebalancingMessage(
     sender: Node,
     recipient: Node,
     channel: PaymentChannel,
+    val reason: FailReason,
     val startId: UUID?,
-    val executionId: UUID?
+    val executionId: UUID?,
     ): Message(type, sender, recipient, channel) {
     override fun toString(): String {
-        return "FailRebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient)"
+        return "FailRebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient, reason=$reason)"
     }
 }
 
