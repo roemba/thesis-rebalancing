@@ -9,7 +9,7 @@ import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.graph.DefaultWeightedEdge
 import kotlinx.coroutines.delay
 
-open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
+open class Node(val id: Int, val g: ChannelNetwork) {
     val paymentChannels: MutableList<PaymentChannel> = ArrayList()
     val ongoingPayments: MutableMap<Payment, LocalPayment> = HashMap()
     val messageChannel = Channel<Message>(Channel.UNLIMITED)
@@ -44,7 +44,7 @@ open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
             if (neighbour === message.recipient) {
                 val randomDelay = SeededRandom.random.nextLong(200)
                 delay(randomDelay)
-                if (true || message.recipient.id in arrayOf(8259, 2019) && message.sender.id in arrayOf(8259, 2019)) {
+                if (message.type in arrayOf(MessageTypes.REQUEST_R, MessageTypes.EXEC_R, MessageTypes.COMMIT_R, MessageTypes.SUCCESS_R, MessageTypes.FAIL_R, MessageTypes.UPDATE_R, MessageTypes.NEXT_ROUND_R)) {
                     logger.debug("Send $message")
                 }
                 neighbour.messageChannel.send(message)
@@ -60,7 +60,7 @@ open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
             val message = messageChannel.receive()
 
             
-            if (true || message.recipient.id in arrayOf(8259, 2019) && message.sender.id in arrayOf(8259, 2019)) {
+            if (message.type in arrayOf(MessageTypes.REQUEST_R, MessageTypes.EXEC_R, MessageTypes.COMMIT_R, MessageTypes.SUCCESS_R, MessageTypes.FAIL_R, MessageTypes.UPDATE_R, MessageTypes.NEXT_ROUND_R)) {
                 logger.debug("Received $message")
             }
             if (message.recipient !== this) {
@@ -199,7 +199,7 @@ open class Node(val id: Int, val g: ChannelNetwork, var totalFunds: Int = 0) {
     }
 
     override fun toString(): String {
-        return "Node(id=$id,totalFunds=$totalFunds)"
+        return "Node(id=$id)"
     }
 
     override fun equals(other: Any?): Boolean {

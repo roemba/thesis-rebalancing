@@ -1,23 +1,22 @@
 package roemer.rebalancing
 
-import java.util.UUID
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 
 data class ParticipantFindingResult (
-    val executionId: UUID,
-    val finalParticipants: Set<UUID>,
+    val executionId: Tag,
+    val finalParticipants: Set<Tag>,
     val acceptedEdges: Set<PaymentChannel>
 )
 
-open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0, val randomDeny: Boolean = false) : Node(id, g, totalFunds) {
+open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolean = false) : Node(id, g) {
     var awake = false
     var started = false
-    var executionId: UUID? = null
-    var anonId: UUID? = null
-    var participants: MutableSet<UUID> = HashSet()
+    var executionId: Tag? = null
+    var anonId: Tag? = null
+    var participants: MutableSet<Tag> = HashSet()
     var edgesThatAcceptedInvite: MutableSet<PaymentChannel> = HashSet()
     var parentEdge: PaymentChannel? = null
     var invitedEdges: MutableSet<PaymentChannel> = HashSet()
@@ -44,8 +43,8 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0, v
     suspend fun findParticipants(hopCount: Int) {
         this.awake = true
         this.started = true
-        executionId = UUID.randomUUID()
-        anonId = SeededRandom.getRandomUUID()
+        executionId = Tag()
+        anonId = Tag()
         participants.add(anonId!!)
 
         logger.info("Starting to find participants with execution id: $executionId and participant id: $anonId")
@@ -78,7 +77,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, totalFunds: Int = 0, v
         // If not already claimed, become claimed
         if (executionId == null) {
             executionId = mes.executionId
-            anonId = SeededRandom.getRandomUUID()
+            anonId = Tag()
             participants.add(anonId!!)
             parentEdge = mes.channel
             logger.info("Claimed by execution id: $executionId using participant id: $anonId, parentEdge: $parentEdge")

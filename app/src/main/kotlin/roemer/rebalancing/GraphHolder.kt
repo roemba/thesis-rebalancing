@@ -141,7 +141,7 @@ class GraphHolder {
     private fun printChannelBalances() {
         println("Channel balances:")
         for (channel in g.getChannelSet()) {
-            println("$channel, Ongoing=${channel.hasOngoingTx()}")
+            println("$channel, Ongoing=${channel.hasOngoingTx()}, demand=${channel.getCurrentDemand(channel.node1, true)}")
         }
         println()
     }

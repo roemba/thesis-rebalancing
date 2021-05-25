@@ -101,7 +101,7 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
 
             assert(this.totalFunds == this.balance1 + this.balance2)
 
-            println("Executing commit for $tx on $this")
+            println("Executing $tx on $this")
             return true
         }
     }
@@ -150,7 +150,7 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
         }
     }
 
-    suspend fun getCurrentDemand(vertex: Node, absolute: Boolean = false): Int {
+    fun getCurrentDemand(vertex: Node, absolute: Boolean = false): Int {
         var diff = (this.balance2 - this.balance1) / 2
 
         if (absolute) {

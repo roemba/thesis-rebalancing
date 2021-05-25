@@ -8,7 +8,33 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 enum class RoundState {
-    WAIT, REQ, SUC, COM
+    WAIT, REQ, SUC, COM, EXEC
+}
+
+class StateMachine (val logger: Logger, startState: RoundState = RoundState.WAIT) {
+    var state = startState
+        set(newState) {
+            if (newState > state) {
+                logger.debug("Setting new state $newState")
+                field = newState
+            }
+        }
+
+    fun isInState(otherState: RoundState): Boolean {
+        return state == otherState
+    }
+
+    override fun toString(): String {
+        return "StateMachine(state=$state)"
+    }
+
+    override fun equals(other: Any?): Boolean {
+        return (other is StateMachine) && (this.state == other.state)
+    }
+
+    override fun hashCode(): Int {
+        return this.state.hashCode()
+    }
 }
 
 data class CycleChannelPair(
@@ -19,39 +45,50 @@ data class CycleChannelPair(
 )
 
 data class TagDemandPair(
-    val tag: UUID,
+    val tag: Tag,
     val demand: Int
 )
 
 data class TagDemandHTLCPair(
-    val tag: UUID,
+    val tag: Tag,
     val demand: Int,
     val htlc: ByteArray?
-)
+) {
+    override fun toString(): String {
+        if (htlc == null) {
+            return "TagDemandHTLCPair(tag=$tag, demand=$demand)"
+        } else {
+            return "TagDemandHTLCPair(tag=$tag, demand=$demand, htlc is provided)"
+        }
+    }
+}
 
-class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : ParticipantNodeAlt(id, g, totalFunds) {
+class RebalancingNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g) {
     // Needs to be reset every time the algorithm runs
-    var orderOfStarting: List<UUID>? = null
+    var orderOfStarting: List<Tag>? = null
     var roundIndex = 0
     var rebalancingAwake = false
     var outgoingDemandEdges: MutableSet<PaymentChannel> = HashSet()
     var incomingDemandEdges: MutableSet<PaymentChannel> = HashSet()
     
     // Needs to be reset every round
-    var roundState = RoundState.WAIT
+    var roundStateMachine = StateMachine(logger)
     var roundMessageHistory: MutableList<Message> = ArrayList()
     var nOfOutstandingRequests = 0
-    var anonIdChannelMap: MutableMap<UUID, PaymentChannel> = HashMap()
-    var cycleChannelPairsMap: MutableMap<UUID, CycleChannelPair> = HashMap()
+    var anonIdChannelMap: MutableMap<Tag, PaymentChannel> = HashMap()
+    var cycleChannelPairsMap: MutableMap<Tag, CycleChannelPair> = HashMap()
     var receivedRequests: MutableList<RequestRebalancingMessage> = ArrayList()
     var receivedCommits: MutableList<CommitRebalancingMessage> = ArrayList()
     var receivedCycleCommits: MutableList<CommitRebalancingMessage> = ArrayList()
     var receivedSuccesses: MutableList<SuccessRebalancingMessage> = ArrayList()
-    var receivedReqTags: MutableSet<UUID> = HashSet()
-    var G: MutableMap<UUID, Pair<Int, PaymentChannel>> = HashMap()
-    var htlcMap: MutableMap<UUID, String> = HashMap()
-    var tagTransactionMap: MutableMap<UUID, Pair<PaymentChannel, Transaction>> = HashMap()
+    var receivedReqTags: MutableSet<Tag> = HashSet()
+    var G: MutableMap<Tag, Pair<Int, PaymentChannel>> = HashMap()
+    var htlcMap: MutableMap<Tag, String> = HashMap()
+    var tagTransactionMap: MutableMap<Tag, Pair<PaymentChannel, Transaction>> = HashMap()
     var sentSuccessChannel: MutableSet<PaymentChannel> = HashSet()
+    var nOfIgnoredCycles = 0
+    var forwardedNextRoundMessage = false
+    var safe = false
     
     // Need to be reset on class creation
     var rebalancingReadyChannel: Channel<Boolean> = Channel(0) // Rendezvous channel
@@ -69,6 +106,7 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
             MessageTypes.FAIL_R -> handleFailMessage(message as FailRebalancingMessage)
             MessageTypes.COMMIT_R -> handleCommitMessage(message as CommitRebalancingMessage)
             MessageTypes.EXEC_R -> handleExecuteRebalancingMessage(message as ExecuteRebalancingMessage)
+            MessageTypes.NEXT_ROUND_R -> handleNextRoundMessage(message as NextRoundMessage)
             else -> {
                 super.sortMessage(message)
             }
@@ -104,9 +142,9 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
     suspend fun startRound() {
         logger.info("$anonId is starting round $roundIndex!")
 
-        roundState = RoundState.REQ
+        roundStateMachine.state = RoundState.REQ
         for (channel in outgoingDemandEdges) {
-            val channelAnonId = UUID.randomUUID()
+            val channelAnonId = Tag()
             anonIdChannelMap.put(channelAnonId, channel)
             val seenSet = receivedReqTags.plus(channelAnonId)
 
@@ -162,7 +200,7 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
     }
 
 
-    suspend fun checkForCycles(mes: RequestRebalancingMessage, seenSetToCheck: Set<UUID>): Boolean {
+    suspend fun checkForCycles(mes: RequestRebalancingMessage, seenSetToCheck: Set<Tag>): Boolean {
         val intersect = anonIdChannelMap.keys.intersect(seenSetToCheck)
         if (intersect.isNotEmpty()) {
             val channelAnonId = intersect.first() // We only care about one match
@@ -170,7 +208,7 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
             // TODO: Possible improvement: remove channelAnonId from anonIdChannelMap after detecting a cycle? Not sure if this is necessary
             receivedRequests.removeIf{m -> m.channel == mes.channel} // Make sure that no requests are in receivedRequests if we find the cycle
 
-            val cycleTag = UUID.randomUUID()
+            val cycleTag = Tag()
             val channelDemand = mes.channel.getDemand(this, true)
             cycleChannelPairsMap.put(cycleTag, CycleChannelPair(mes.channel, anonIdChannelMap.get(channelAnonId)!!, channelDemand, false))
             sentSuccessChannel.add(mes.channel)
@@ -205,10 +243,10 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
 
         roundMessageHistory.add(mes)
 
-        if (roundState == RoundState.WAIT) {
-            roundState = RoundState.REQ
+        if (roundStateMachine.isInState(RoundState.WAIT)) {
+            roundStateMachine.state = RoundState.REQ
             for (channel in outgoingDemandEdges) {
-                val channelAnonId = UUID.randomUUID()
+                val channelAnonId = Tag()
                 anonIdChannelMap.put(channelAnonId, channel)
                 receivedReqTags.addAll(mes.seenSet)
                 val seenSet = receivedReqTags.plus(channelAnonId)
@@ -216,7 +254,7 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
                 sendMessage(RequestRebalancingMessage(MessageTypes.REQUEST_R, this, channel.getOppositeNode(this), channel, mes.startId, mes.executionId, seenSet))
                 nOfOutstandingRequests++
             }
-        } else if (roundState == RoundState.REQ) {
+        } else if (roundStateMachine.isInState(RoundState.REQ)) {
             if (this.checkForCycles(mes, mes.seenSet)) {
                 return
             }
@@ -250,7 +288,7 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
 
         roundMessageHistory.add(mes)
 
-        if (roundState != RoundState.REQ) {
+        if (!roundStateMachine.isInState(RoundState.REQ)) {
             logger.debug("Ignoring update because already in another roundState")
             return
         }
@@ -288,7 +326,7 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
 
         roundMessageHistory.add(mes)
 
-        if (roundState == RoundState.REQ) {
+        if (roundStateMachine.isInState(RoundState.REQ)) {
             receivedSuccesses.add(mes)
             nOfOutstandingRequests--
         }
@@ -305,7 +343,7 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
 
         roundMessageHistory.add(mes)
 
-        if (roundState == RoundState.REQ) {
+        if (roundStateMachine.isInState(RoundState.REQ)) {
             nOfOutstandingRequests--
         }
 
@@ -315,19 +353,35 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
     }
 
     suspend fun replyToRequests() {
-        if (roundState == RoundState.REQ) {
-            roundState = RoundState.SUC
+        if (roundStateMachine.isInState(RoundState.REQ)) {
+            roundStateMachine.state = RoundState.SUC
         }
 
-        if (roundState != RoundState.SUC) {
+        if (!roundStateMachine.isInState(RoundState.SUC)) {
             return
         }
+
+        // Check if the startChannels of the cycles have replied with a success containing the cycle tag
+        // val successChannels: Map<PaymentChannel, SuccessRebalancingMessage> = receivedSuccesses.associate { Pair(it.channel, it) }
+        // val iter = cycleChannelPairsMap.iterator()
+        // while (iter.hasNext()) {
+        //     val entry = iter.next()
+        //     val startSuccessMessage = successChannels.get(entry.value.startChannel)
+        //     val tags = startSuccessMessage!!.tagList.map { i -> i.tag }
+        //     if (!(entry.key in tags)) {
+        //         logger.warn("Cycle ${entry.key} has not responded on starting channel, to prevent double claiming, deleting from pair and successMap")
+        //         iter.remove()
+        //         receivedSuccesses.remove(startSuccessMessage)
+        //         nOfIgnoredCycles++
+        //     }
+        // }
 
         for (success in receivedSuccesses) {
             for (tagDemandPair in success.tagList) {
                 if (tagDemandPair.tag in cycleChannelPairsMap) { 
                     val entry = cycleChannelPairsMap.get(tagDemandPair.tag)!!
                     if (!entry.completed || tagDemandPair.demand > entry.demand) {
+                        logger.debug("Storing new demand ${tagDemandPair.demand} for cycle ${tagDemandPair.tag}")
                         cycleChannelPairsMap.replace(tagDemandPair.tag, 
                             CycleChannelPair(
                                 entry.endChannel, 
@@ -364,8 +418,14 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
     }
 
     suspend fun commitSource() {
-        val P: MutableMap<PaymentChannel, Pair<MutableList<TagDemandHTLCPair>, MutableMap<UUID, Transaction>>> = HashMap()
+        val P: MutableMap<PaymentChannel, Pair<MutableList<TagDemandHTLCPair>, MutableMap<Tag, Transaction>>> = HashMap()
         for (entry in cycleChannelPairsMap.entries) {
+            if (!entry.value.completed) {
+                logger.debug("Cycle ${entry.key} not complete, skipping...")
+                nOfIgnoredCycles++
+                continue
+            }
+
             val pairs = P.getOrPut(entry.value.startChannel, { Pair(ArrayList(), HashMap()) })
 
             var htlc: ByteArray? = null
@@ -395,6 +455,10 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
                 sendMessage(CommitRebalancingMessage(MessageTypes.COMMIT_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), this.executionId!!, ArrayList(), HashMap()))
             }
         }
+
+        if (receivedRequests.size + cycleChannelPairsMap.size == 0) { // If no requests and cycles exist including the source, continue to nextRound
+            nextRound()
+        }
     }
 
     suspend fun handleCommitMessage(mes: CommitRebalancingMessage) {
@@ -408,7 +472,7 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
             channelCommitMessage.add(mes.channel)
         }
 
-        roundState = RoundState.COM
+        roundStateMachine.state = RoundState.COM
         val cycleEndChannels = cycleChannelPairsMap.values.map { v -> v.endChannel }
         if (!(mes.channel in cycleEndChannels)) {
             receivedCommits.add(mes)
@@ -423,6 +487,10 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
                     }
                 }
                 for (entry in cycleChannelPairsMap.entries) {
+                    if (!entry.value.completed) {
+                        logger.debug("Cycle ${entry.key} not complete, skipping...")
+                        continue
+                    }
                     var htlc: ByteArray? = null
                     if (entry.value.demand > 0) {
                         val preImage = UUID.randomUUID().toString()
@@ -436,7 +504,7 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
                 }
                 for (channel in outgoingDemandEdges) {
                     if (channel in K) {
-                        val tagTxMap: MutableMap<UUID, Transaction> = HashMap()
+                        val tagTxMap: MutableMap<Tag, Transaction> = HashMap()
                         for (pair in K.get(channel)!!) {
                             if (pair.htlc != null) {
                                 val tx = Transaction(UUID.randomUUID(), pair.demand, this, channel.getOppositeNode(this))
@@ -457,7 +525,8 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
             receivedCycleCommits.add(mes)
         }
 
-        if (receivedCommits.size + receivedCycleCommits.size == receivedRequests.size + cycleChannelPairsMap.size) {
+        // logger.debug("#ofReceivedCommits: ${receivedCommits.size} #ofReceivedCycleCommits: ${receivedCycleCommits.size} #ofIgnoredCycles: $nOfIgnoredCycles #ofReceivedRequests: ")
+        if (receivedCommits.size + receivedCycleCommits.size + nOfIgnoredCycles == receivedRequests.size + cycleChannelPairsMap.size) {
             logger.info("Received all commits from requesting and cycle channels")
 
             // Store which transaction belongs to which channel and tag, but only for commits from sources other than owned cycles
@@ -470,6 +539,8 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
                     }
                 }
             }
+
+            roundStateMachine.state = RoundState.EXEC
 
             // Execute cycle transactions
             for (commit in receivedCycleCommits) {
@@ -487,13 +558,30 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
 
             // If there are no commits from sources other than an owned cycle, continue to next round
             if (tagTransactionMap.isEmpty()) { 
-                nextRound()
+                safe = true
+                logger.debug("Now safe")
+                if (iStartedRound() || forwardedNextRoundMessage) {
+                    nextRound()
+                }
+            } else {
+                logger.debug("Still waiting for ${tagTransactionMap.keys}")
             }
         }
     }
 
     suspend fun handleExecuteRebalancingMessage(mes: ExecuteRebalancingMessage) {
+        if (!rebalancingAwake || mes.startId != getRoundStarter()) {
+            return
+        }
+
         if (!this.checkMessage(mes)) { return }
+
+        if (roundStateMachine.isInState(RoundState.COM)) {
+            sendMessage(mes) // Add message to back of queue to try again later
+            return
+        } else if (!roundStateMachine.isInState(RoundState.EXEC)) {
+            throw Error("Received a executing message before COM state!")
+        }
 
         roundMessageHistory.add(mes)
 
@@ -503,6 +591,7 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
         }
 
         val entryValue = tagTransactionMap.get(mes.tag)!!
+        logger.info("Executing ${mes.tag}")
         entryValue.first.executeTx(entryValue.second, digest.digest(mes.preImage.encodeToByteArray()))
         sendMessage(ExecuteRebalancingMessage(
             MessageTypes.EXEC_R, this, entryValue.first.getOppositeNode(this), entryValue.first, this.getRoundStarter(), this.executionId!!,
@@ -512,11 +601,39 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
         tagTransactionMap.remove(mes.tag)
 
         if (tagTransactionMap.isEmpty()) {
+            safe = true
+            logger.debug("Now safe")
+            if (forwardedNextRoundMessage) {
+                nextRound()
+            }
+        } else {
+            logger.debug("Still waiting for ${tagTransactionMap.keys}")
+        }
+    }
+
+    suspend fun handleNextRoundMessage(mes: NextRoundMessage) {
+        if (!rebalancingAwake || mes.startId != getRoundStarter()) {
+            return
+        }
+
+        if (!this.checkMessage(mes)) { return }
+
+        roundMessageHistory.add(mes)
+
+        if (!forwardedNextRoundMessage) {
+            for (channel in outgoingDemandEdges.plus(incomingDemandEdges)) {
+                sendMessage(NextRoundMessage(MessageTypes.NEXT_ROUND_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), executionId!!))
+            }
+            forwardedNextRoundMessage = true
+        }
+
+        if (roundStateMachine.isInState(RoundState.WAIT) || safe) {
+            logger.debug("Pushed to next round by nextRoundMessage")
             nextRound()
         }
     }
 
-    fun getRoundStarter(): UUID {
+    fun getRoundStarter(): Tag {
         return this.orderOfStarting!![this.roundIndex]
     }
 
@@ -565,11 +682,17 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
     }
 
     suspend fun nextRound() {
+        if (iStartedRound()) {
+            for (channel in outgoingDemandEdges.plus(incomingDemandEdges)) {
+                sendMessage(NextRoundMessage(MessageTypes.NEXT_ROUND_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), executionId!!))
+            }
+        }
+
         roundIndex++
         logger.debug("Going to round $roundIndex!")
 
         // Reset round variables
-        roundState = RoundState.WAIT
+        roundStateMachine = StateMachine(logger)
         roundMessageHistory = ArrayList()
         nOfOutstandingRequests = 0
         anonIdChannelMap = HashMap()
@@ -583,6 +706,9 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
         htlcMap = HashMap()
         tagTransactionMap = HashMap()
         sentSuccessChannel = HashSet()
+        nOfIgnoredCycles = 0
+        forwardedNextRoundMessage = false
+        safe = false
 
         channelSuccessMessage = HashSet()
         channelCommitMessage = HashSet()
@@ -602,5 +728,11 @@ class RebalancingNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Partici
         } else {
             logger.info("Terminated rebalancing unsuccessfully")
         }
+
+        orderOfStarting = null
+        roundIndex = 0
+        rebalancingAwake = false
+        outgoingDemandEdges = HashSet()
+        incomingDemandEdges = HashSet()
     }
 }

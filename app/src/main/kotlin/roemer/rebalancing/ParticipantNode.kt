@@ -1,14 +1,13 @@
 package roemer.rebalancing
 
-import java.util.UUID
 import kotlinx.coroutines.delay
 
-class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id, g, totalFunds) {
+class ParticipantNode(id: Int, g: ChannelNetwork) : Node(id, g) {
     var awake = false
     var started = false
-    var executionId: UUID? = null
-    var anonId: UUID? = null
-    var participants: MutableSet<UUID> = HashSet()
+    var executionId: Tag? = null
+    var anonId: Tag? = null
+    var participants: MutableSet<Tag> = HashSet()
     var unacceptedInviteEdges: MutableSet<PaymentChannel> = HashSet()
     var acceptedEdges: MutableSet<PaymentChannel> = HashSet()
     var positiveDemandEdges: MutableSet<PaymentChannel> = HashSet()
@@ -31,8 +30,8 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
     suspend fun startFindingParticipants(hopCount: Int) {
         this.awake = true
         this.started = true
-        executionId = UUID.randomUUID()
-        anonId = UUID.randomUUID()
+        executionId = Tag()
+        anonId = Tag()
         participants.add(anonId!!)
 
         logger.info("Starting to find participants with execution id: $executionId and participant id: $anonId")
@@ -67,7 +66,7 @@ class ParticipantNode(id: Int, g: ChannelNetwork, totalFunds: Int = 0) : Node(id
         // If not already claimed, become claimed
         if (executionId == null) {
             executionId = mes.executionId
-            anonId = UUID.randomUUID()
+            anonId = Tag()
             participants.add(anonId!!)
             sourceEdge = mes.channel
             logger.info("Claimed by execution id: $executionId using participant id: $anonId")

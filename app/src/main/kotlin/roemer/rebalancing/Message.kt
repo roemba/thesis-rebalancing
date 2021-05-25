@@ -5,7 +5,7 @@ import org.jgrapht.graph.DefaultWeightedEdge
 import java.util.UUID
 
 enum class MessageTypes {
-    REQ_TX, EXEC_TX, ABORT_TX, INVITE_P, ACCEPT_P, FINISH_P, DENY_P, COMMIT_R, REQUEST_R, SUCCESS_R, UPDATE_R, FAIL_R, EXEC_R
+    REQ_TX, EXEC_TX, ABORT_TX, INVITE_P, ACCEPT_P, FINISH_P, DENY_P, COMMIT_R, REQUEST_R, SUCCESS_R, UPDATE_R, FAIL_R, EXEC_R, NEXT_ROUND_R
 }
 
 abstract class Message(
@@ -58,7 +58,7 @@ open class ParticipantMessage(
     sender: Node,
     recipient: Node,
     channel: PaymentChannel,
-    val executionId: UUID
+    val executionId: Tag
 ): Message(type, sender, recipient, channel) {
     override fun toString(): String {
         return "ParticipantMessage(type=$type, sender=$sender, recipient=$recipient, executionId=$executionId, channel=${channel.id})"
@@ -70,7 +70,7 @@ class InviteParticipantMessage(
     sender: Node,
     recipient: Node,
     channel: PaymentChannel,
-    executionId: UUID,
+    executionId: Tag,
     val hopCount: Int
 ): ParticipantMessage(type, sender, recipient, channel, executionId) {
     override fun toString(): String {
@@ -83,8 +83,8 @@ open class AcceptParticipantMessage(
     sender: Node,
     recipient: Node,
     channel: PaymentChannel,
-    executionId: UUID,
-    val participants: Set<UUID>
+    executionId: Tag,
+    val participants: Set<Tag>
 ): ParticipantMessage(type, sender, recipient, channel, executionId) {
     override fun toString(): String {
         return "AcceptParticipantMessage(sender=$sender, recipient=$recipient, executionId=$executionId, channel=${channel.id})"//, participants=$participants)"
@@ -96,8 +96,8 @@ class FinishParticipantMessage(
     sender: Node,
     recipient: Node,
     channel: PaymentChannel,
-    executionId: UUID,
-    participants: Set<UUID>
+    executionId: Tag,
+    participants: Set<Tag>
 ): AcceptParticipantMessage(type, sender, recipient, channel, executionId, participants) {
     override fun toString(): String {
         return "FinishParticipantMessage(sender=$sender, recipient=$recipient, executionId=$executionId)"//, participants=$participants)"
@@ -109,8 +109,8 @@ open class RebalancingMessage(
     sender: Node,
     recipient: Node,
     channel: PaymentChannel,
-    val startId: UUID,
-    val executionId: UUID
+    val startId: Tag,
+    val executionId: Tag
     ): Message(type, sender, recipient, channel) {
     override fun toString(): String {
         return "RebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient)"
@@ -122,12 +122,12 @@ open class RequestRebalancingMessage(
     sender: Node,
     recipient: Node,
     channel: PaymentChannel,
-    startId: UUID,
-    executionId: UUID,
-    val seenSet: Set<UUID>,
+    startId: Tag,
+    executionId: Tag,
+    val seenSet: Set<Tag>,
     ): RebalancingMessage(type, sender, recipient, channel, startId, executionId) {
     override fun toString(): String {
-        return "RequestRebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient, seenSet=$seenSet)"
+        return "RequestRebalancingMessage(startId=$startId, sender=$sender, recipient=$recipient, seenSet=$seenSet, channelId=${channel.id})"
     }
 }
 
@@ -136,12 +136,12 @@ class UpdateRebalancingMessage(
     sender: Node,
     recipient: Node,
     channel: PaymentChannel,
-    startId: UUID,
-    executionId: UUID,
-    seenSet: Set<UUID>,
+    startId: Tag,
+    executionId: Tag,
+    seenSet: Set<Tag>,
     ): RequestRebalancingMessage(type, sender, recipient, channel, startId, executionId, seenSet) {
     override fun toString(): String {
-        return "UpdateRebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient, seenSet=$seenSet)"
+        return "UpdateRebalancingMessage(startId=$startId, sender=$sender, recipient=$recipient, seenSet=$seenSet, channelId=${channel.id})"
     }
 }
 
@@ -150,12 +150,12 @@ open class SuccessRebalancingMessage(
     sender: Node,
     recipient: Node,
     channel: PaymentChannel,
-    startId: UUID,
-    executionId: UUID,
+    startId: Tag,
+    executionId: Tag,
     val tagList: List<TagDemandPair>,
     ): RebalancingMessage(type, sender, recipient, channel, startId, executionId) {
     override fun toString(): String {
-        return "SuccessRebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient, tagList=$tagList)"
+        return "SuccessRebalancingMessage(startId=$startId, sender=$sender, recipient=$recipient, tagList=$tagList, channelId=${channel.id})"
     }
 }
 
@@ -164,13 +164,13 @@ class CommitRebalancingMessage(
     sender: Node,
     recipient: Node,
     channel: PaymentChannel,
-    startId: UUID,
-    executionId: UUID,
+    startId: Tag,
+    executionId: Tag,
     val tagList: List<TagDemandHTLCPair>,
-    val tagTxMap: Map<UUID, Transaction>
+    val tagTxMap: Map<Tag, Transaction>
     ): RebalancingMessage(type, sender, recipient, channel, startId, executionId) {
     override fun toString(): String {
-        return "CommitRebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient, tagList=$tagList)"
+        return "CommitRebalancingMessage(startId=$startId, sender=$sender, recipient=$recipient, tagList=$tagList, channelId=${channel.id})"
     }
 }
 
@@ -184,11 +184,11 @@ class FailRebalancingMessage(
     recipient: Node,
     channel: PaymentChannel,
     val reason: FailReason,
-    val startId: UUID?,
-    val executionId: UUID?,
+    val startId: Tag?,
+    val executionId: Tag?,
     ): Message(type, sender, recipient, channel) {
     override fun toString(): String {
-        return "FailRebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient, reason=$reason)"
+        return "FailRebalancingMessage(startId=$startId, sender=$sender, recipient=$recipient, reason=$reason, channelId=${channel.id})"
     }
 }
 
@@ -197,12 +197,25 @@ class ExecuteRebalancingMessage(
     sender: Node,
     recipient: Node,
     channel: PaymentChannel,
-    startId: UUID,
-    executionId: UUID,
-    val tag: UUID,
+    startId: Tag,
+    executionId: Tag,
+    val tag: Tag,
     val preImage: String
     ): RebalancingMessage(type, sender, recipient, channel, startId, executionId) {
     override fun toString(): String {
-        return "ExecuteRebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient, tag=$tag, preImage=$preImage)"
+        return "ExecuteRebalancingMessage(startId=$startId, sender=$sender, recipient=$recipient, tag=$tag, preImage=$preImage, channelId=${channel.id})"
+    }
+}
+
+class NextRoundMessage(
+    type: MessageTypes,
+    sender: Node,
+    recipient: Node,
+    channel: PaymentChannel,
+    startId: Tag,
+    executionId: Tag
+    ): RebalancingMessage(type, sender, recipient, channel, startId, executionId) {
+    override fun toString(): String {
+        return "NextRoundMessage(startId=$startId, sender=$sender, recipient=$recipient, channelId=${channel.id})"
     }
 }
