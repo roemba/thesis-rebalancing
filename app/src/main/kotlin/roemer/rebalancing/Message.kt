@@ -5,20 +5,29 @@ import org.jgrapht.graph.DefaultWeightedEdge
 import java.util.UUID
 
 enum class MessageTypes {
-    REQ_TX, EXEC_TX, ABORT_TX, INVITE_P, ACCEPT_P, FINISH_P, DENY_P, COMMIT_R, REQUEST_R, SUCCESS_R, UPDATE_R, FAIL_R, EXEC_R, NEXT_ROUND_R
+    REQ_TX, EXEC_TX, ABORT_TX, // Transaction execution
+    INVITE_P, ACCEPT_P, FINISH_P, DENY_P, // Participant discovery
+    COMMIT_R, REQUEST_R, SUCCESS_R, UPDATE_R, FAIL_R, EXEC_R, NEXT_ROUND_R, // Privacy-preserving rebalancing
+    FAIL_REV, DENY_REV, INIT_REV, CONFIRM_REQ_REV, CONFIRM_REV, ROUND_CONFIRM_REV, DEMAND_REV, TX_SET_REV, SIGNED_TX_SET_REV, COMPLETE_TX_SET_REV // Revive  
 }
 
 abstract class Message(
     val type: MessageTypes,
     val sender: Node,
     val recipient: Node,
+    )
+
+open class ChannelMessage(
+    type: MessageTypes,
+    sender: Node,
+    recipient: Node,
     val channel: PaymentChannel
-    ) {
-        init {
-            assert(channel.isChannelNode(sender))
-            assert(channel.isChannelNode(recipient))
-        }
+): Message(type, sender, recipient) {
+    init {
+        assert(channel.isChannelNode(sender))
+        assert(channel.isChannelNode(recipient))
     }
+}
 
 open class PaymentMessage(
     type: MessageTypes,
@@ -26,7 +35,7 @@ open class PaymentMessage(
     recipient: Node,
     channel: PaymentChannel,
     val payment: Payment
-    ): Message(type, sender, recipient, channel) {
+    ): ChannelMessage(type, sender, recipient, channel) {
     override fun equals(other: Any?): Boolean {
         return (other is PaymentMessage) && (this.toString() == other.toString())
     }
@@ -59,7 +68,7 @@ open class ParticipantMessage(
     recipient: Node,
     channel: PaymentChannel,
     val executionId: Tag
-): Message(type, sender, recipient, channel) {
+): ChannelMessage(type, sender, recipient, channel) {
     override fun toString(): String {
         return "ParticipantMessage(type=$type, sender=$sender, recipient=$recipient, executionId=$executionId, channel=${channel.id})"
     }
@@ -111,7 +120,7 @@ open class RebalancingMessage(
     channel: PaymentChannel,
     val startId: Tag,
     val executionId: Tag
-    ): Message(type, sender, recipient, channel) {
+    ): ChannelMessage(type, sender, recipient, channel) {
     override fun toString(): String {
         return "RebalancingMessage(type=$type, startId=$startId, sender=$sender, recipient=$recipient)"
     }
@@ -186,7 +195,7 @@ class FailRebalancingMessage(
     val reason: FailReason,
     val startId: Tag?,
     val executionId: Tag?,
-    ): Message(type, sender, recipient, channel) {
+    ): ChannelMessage(type, sender, recipient, channel) {
     override fun toString(): String {
         return "FailRebalancingMessage(startId=$startId, sender=$sender, recipient=$recipient, reason=$reason, channelId=${channel.id})"
     }

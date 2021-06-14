@@ -9,8 +9,9 @@ import com.fasterxml.jackson.core.type.TypeReference
 import java.io.File
 import org.jgrapht.alg.connectivity.KosarajuStrongConnectivityInspector
 import org.jgrapht.graph.DefaultWeightedEdge
+import roemer.revive.ReviveNode
 
-class TopologyTranslator (val nodeFileName: String, val channelFileName: String) {
+class TopologyTranslator (val nodeFileName: String, val channelFileName: String, val rebalancerType: RebalancerTypes) {
     val nodeResourcePath: String
     val channelResourcePath: String
 
@@ -19,7 +20,7 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String)
         this.channelResourcePath = this::class.java.classLoader.getResource(channelFileName)!!.file
     }
 
-    fun translate(): Pair<ChannelNetwork, List<RebalancingNode>> {
+    fun translate(): Pair<ChannelNetwork, List<Node>> {
         data class JSONNode (val id: String)
         data class JSONChannel (val id: String, val source: String, val target: String)
 
@@ -30,7 +31,7 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String)
         val jsonChannels: List<JSONChannel> = mapper.readValue(File(channelResourcePath))
 
 
-        val nodes: MutableList<RebalancingNode> = ArrayList()
+        val nodes: MutableList<Node> = ArrayList()
         val nodeIdToIndexMap = HashMap<String, Node>()
         val g = ChannelNetwork()
 
@@ -41,7 +42,10 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String)
                 continue
             }
 
-            val n = RebalancingNode(i, g)
+            val n = when (this.rebalancerType) {
+                RebalancerTypes.CoinWasher -> CoinWasherNode(i, g)
+                RebalancerTypes.Revive -> ReviveNode(i, g)
+            }
             g.graph.addVertex(n)
             nodes.add(n)
             nodeIdToIndexMap.put(jsonNodes[i].id, n)

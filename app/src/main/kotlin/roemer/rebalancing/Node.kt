@@ -15,6 +15,10 @@ open class Node(val id: Int, val g: ChannelNetwork) {
     val messageChannel = Channel<Message>(Channel.UNLIMITED)
     val logger = Logger(this)
 
+    var numberOfTransactionMessages = 0
+    var numberOfParticipantMessages = 0
+    var numberOfRebalancingMessages = 0
+
     suspend fun startPayment(amount: Int, receiver: Node) {
         val payment = Payment(this, receiver, amount)
 
@@ -38,20 +42,40 @@ open class Node(val id: Int, val g: ChannelNetwork) {
         )
     }
 
-    suspend fun sendMessage(message: Message) {
-        val neighbours = Graphs.neighborListOf(g.graph, this).plus(listOf(this)) // List of neighbours + self
-        for (neighbour in neighbours) {
-            if (neighbour === message.recipient) {
-                val randomDelay = SeededRandom.random.nextLong(200)
-                delay(randomDelay)
-                if (message.type in arrayOf(MessageTypes.REQUEST_R, MessageTypes.EXEC_R, MessageTypes.COMMIT_R, MessageTypes.SUCCESS_R, MessageTypes.FAIL_R, MessageTypes.UPDATE_R, MessageTypes.NEXT_ROUND_R)) {
-                    logger.debug("Send $message")
+    suspend fun sendMessage(message: Message, direct: Boolean = false) {
+        if (!direct) {
+            var recipientNode: Node? = null
+
+            val neighbours = Graphs.neighborListOf(g.graph, this).plus(listOf(this)) // List of neighbours + self
+            for (neighbour in neighbours) {
+                if (neighbour === message.recipient) {
+                    recipientNode = neighbour
+                    break
                 }
-                neighbour.messageChannel.send(message)
-                return
+            }
+
+            if (recipientNode == null) {
+                throw IllegalArgumentException("No one to deliver $message to!")
             }
         }
-        throw IllegalArgumentException("No one to deliver $message to!")
+
+        val randomDelay = SeededRandom.random.nextLong(200)
+        delay(randomDelay)
+
+        // Log number of messages
+        when (message.type) {
+            MessageTypes.REQ_TX, MessageTypes.EXEC_TX, MessageTypes.ABORT_TX -> this.numberOfTransactionMessages++
+            MessageTypes.INVITE_P, MessageTypes.ACCEPT_P, MessageTypes.FINISH_P, MessageTypes.DENY_P -> this.numberOfParticipantMessages++
+            MessageTypes.COMMIT_R, MessageTypes.REQUEST_R, MessageTypes.SUCCESS_R, MessageTypes.UPDATE_R, MessageTypes.FAIL_R, MessageTypes.EXEC_R, MessageTypes.NEXT_ROUND_R -> this.numberOfRebalancingMessages++
+            else -> {
+                logger.error("Cannot count ${message.type}")
+            }
+        }
+
+        if (true || message.type in arrayOf(MessageTypes.REQUEST_R, MessageTypes.EXEC_R, MessageTypes.COMMIT_R, MessageTypes.SUCCESS_R, MessageTypes.FAIL_R, MessageTypes.UPDATE_R, MessageTypes.NEXT_ROUND_R)) {
+            logger.debug("Send $message")
+        }
+        message.recipient.messageChannel.send(message)
     }
 
     @ExperimentalCoroutinesApi
@@ -60,7 +84,7 @@ open class Node(val id: Int, val g: ChannelNetwork) {
             val message = messageChannel.receive()
 
             
-            if (message.type in arrayOf(MessageTypes.REQUEST_R, MessageTypes.EXEC_R, MessageTypes.COMMIT_R, MessageTypes.SUCCESS_R, MessageTypes.FAIL_R, MessageTypes.UPDATE_R, MessageTypes.NEXT_ROUND_R)) {
+            if (true || message.type in arrayOf(MessageTypes.REQUEST_R, MessageTypes.EXEC_R, MessageTypes.COMMIT_R, MessageTypes.SUCCESS_R, MessageTypes.FAIL_R, MessageTypes.UPDATE_R, MessageTypes.NEXT_ROUND_R)) {
                 logger.debug("Received $message")
             }
             if (message.recipient !== this) {

@@ -138,29 +138,45 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
     }
 
     @Throws(IllegalStateException::class)
-    suspend fun getDemand(vertex: Node, absolute: Boolean = false): Int {
+    suspend fun getDemand(vertex: Node?): Int {
+        this.lock()
+        mutex.withLock {
+            if (!this.locked) {
+                throw IllegalStateException("Expected the channel to be locked!")
+            }
+
+            return getCurrentDemand(vertex)
+        }
+    }
+
+    fun getCurrentDemand(vertex: Node?): Int {
+        var diff = (this.balance2 - this.balance1) / 2
+
+        if (vertex == null) {
+            return Math.abs(diff)
+        }
+        
+        if (!this.isChannelNode(vertex)) {
+            throw IllegalArgumentException("The given node does not belong to this channel!")
+        }
+        
+        if (vertex === this.node2) {
+            diff *= -1
+        }
+
+        // println("Node $vertex gets demand $diff on channel $this")
+        return diff
+    }
+
+    @Throws(IllegalStateException::class)
+    suspend fun lock() {
         mutex.withLock {
             this.locked = true
 
             if (this.hasOngoingTx()) {
                 throw IllegalStateException("Cannot lock channel as there are still pending transactions, check back later!")
             }
-
-            return getCurrentDemand(vertex, absolute)
         }
-    }
-
-    fun getCurrentDemand(vertex: Node, absolute: Boolean = false): Int {
-        var diff = (this.balance2 - this.balance1) / 2
-
-        if (absolute) {
-            return Math.abs(diff)
-        } else if (vertex === this.node2) {
-            diff *= -1
-        }
-
-        // println("Node $vertex gets demand $diff on channel $this")
-        return diff
     }
 
     suspend fun unlock() {

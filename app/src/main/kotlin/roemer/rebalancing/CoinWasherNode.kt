@@ -11,32 +11,6 @@ enum class RoundState {
     WAIT, REQ, SUC, COM, EXEC
 }
 
-class StateMachine (val logger: Logger, startState: RoundState = RoundState.WAIT) {
-    var state = startState
-        set(newState) {
-            if (newState > state) {
-                logger.debug("Setting new state $newState")
-                field = newState
-            }
-        }
-
-    fun isInState(otherState: RoundState): Boolean {
-        return state == otherState
-    }
-
-    override fun toString(): String {
-        return "StateMachine(state=$state)"
-    }
-
-    override fun equals(other: Any?): Boolean {
-        return (other is StateMachine) && (this.state == other.state)
-    }
-
-    override fun hashCode(): Int {
-        return this.state.hashCode()
-    }
-}
-
 data class CycleChannelPair(
     val endChannel: PaymentChannel,
     val startChannel: PaymentChannel,
@@ -63,7 +37,7 @@ data class TagDemandHTLCPair(
     }
 }
 
-class RebalancingNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g) {
+class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebalancer {
     // Needs to be reset every time the algorithm runs
     var orderOfStarting: List<Tag>? = null
     var roundIndex = 0
@@ -72,7 +46,7 @@ class RebalancingNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g) {
     var incomingDemandEdges: MutableSet<PaymentChannel> = HashSet()
     
     // Needs to be reset every round
-    var roundStateMachine = StateMachine(logger)
+    var roundStateMachine = StateMachine<RoundState>(logger, RoundState.WAIT)
     var roundMessageHistory: MutableList<Message> = ArrayList()
     var nOfOutstandingRequests = 0
     var anonIdChannelMap: MutableMap<Tag, PaymentChannel> = HashMap()
@@ -113,19 +87,20 @@ class RebalancingNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g) {
         }
     }
 
-    suspend fun rebalance(hopCount: Int) {
+    override suspend fun rebalance(hopCount: Int) {
         logger.info("Starting participant discovery before rebalancing")
 
         this.findParticipants(hopCount)
     }
 
-    suspend fun rebalancingClient() {
+    override suspend fun rebalancingClient() {
         while (true) {
             val foundParticipantsResult = resultReadyChannel.receive()
 
             logger.info("Participant discovery finished with result $foundParticipantsResult, ${result!!.acceptedEdges}")
 
             if (!foundParticipantsResult) {
+                logger.warn("No participant result found!")
                 continue
             }
             
@@ -209,7 +184,7 @@ class RebalancingNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g) {
             receivedRequests.removeIf{m -> m.channel == mes.channel} // Make sure that no requests are in receivedRequests if we find the cycle
 
             val cycleTag = Tag()
-            val channelDemand = mes.channel.getDemand(this, true)
+            val channelDemand = mes.channel.getDemand(null)
             cycleChannelPairsMap.put(cycleTag, CycleChannelPair(mes.channel, anonIdChannelMap.get(channelAnonId)!!, channelDemand, false))
             sentSuccessChannel.add(mes.channel)
             sendMessage(SuccessRebalancingMessage(
@@ -407,7 +382,7 @@ class RebalancingNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g) {
         } else {
             val F = G.entries.toList()
             for (request in receivedRequests) {
-                val N = splitEqually(request.channel.getDemand(this, true), F.map { e -> e.value.first }.toIntArray())
+                val N = splitEqually(request.channel.getDemand(null), F.map { e -> e.value.first }.toIntArray())
                 val K: MutableList<TagDemandPair> = ArrayList()
                 for (i in 0 until F.size) {
                     K.add(TagDemandPair(F[i].key, N[i]))
@@ -692,7 +667,7 @@ class RebalancingNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g) {
         logger.debug("Going to round $roundIndex!")
 
         // Reset round variables
-        roundStateMachine = StateMachine(logger)
+        roundStateMachine = StateMachine(logger, RoundState.WAIT)
         roundMessageHistory = ArrayList()
         nOfOutstandingRequests = 0
         anonIdChannelMap = HashMap()
