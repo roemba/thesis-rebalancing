@@ -30,8 +30,8 @@ class ParticipantNode(id: Int, g: ChannelNetwork) : Node(id, g) {
     suspend fun startFindingParticipants(hopCount: Int) {
         this.awake = true
         this.started = true
-        executionId = Tag()
-        anonId = Tag()
+        executionId = Tag.createTag()
+        anonId = Tag.createTag()
         participants.add(anonId!!)
 
         logger.info("Starting to find participants with execution id: $executionId and participant id: $anonId")
@@ -66,7 +66,7 @@ class ParticipantNode(id: Int, g: ChannelNetwork) : Node(id, g) {
         // If not already claimed, become claimed
         if (executionId == null) {
             executionId = mes.executionId
-            anonId = Tag()
+            anonId = Tag.createTag()
             participants.add(anonId!!)
             sourceEdge = mes.channel
             logger.info("Claimed by execution id: $executionId using participant id: $anonId")

@@ -101,7 +101,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         while (true) {
             val foundParticipantsResult = resultReadyChannel.receive()
 
-            logger.info("Participant discovery finished with result $foundParticipantsResult, ${result!!.acceptedEdges}")
+            logger.info("Participant discovery finished with result ") //$foundParticipantsResult, ${result!!.acceptedEdges}")
 
             if (!foundParticipantsResult) {
                 logger.warn("No participant result found!")
@@ -109,10 +109,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             }
             
             this.wakeUp()
-
-            if (this.orderOfStarting!![0] == this.anonId) {
-                this.startRound()
-            }
 
             rebalancingReadyChannel.receive()
         }
@@ -128,7 +124,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
         roundStateMachine.state = RoundState.REQ
         for (channel in outgoingDemandEdges) {
-            val channelAnonId = Tag()
+            val channelAnonId = Tag.createTag()
             anonIdChannelMap.put(channelAnonId, channel)
             val seenSet = receivedReqTags.plus(channelAnonId)
 
@@ -150,12 +146,18 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
             for (channel in this.result!!.acceptedEdges) {
                 val demand = channel.getDemand(this)
-                logger.debug("Sorting $channel with balance $demand")
+                // logger.debug("Sorting $channel with balance $demand")
                 if (demand < 0) {
                     outgoingDemandEdges.add(channel)
                 } else {
                     incomingDemandEdges.add(channel)
                 }
+            }
+
+            logger.debug("${getRoundStarterAsNode()} is round starter")
+
+            if (iStartedRound()) {
+                this.startRound()
             }
 
             return true
@@ -192,7 +194,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             // TODO: Possible improvement: remove channelAnonId from anonIdChannelMap after detecting a cycle? Not sure if this is necessary
             receivedRequests.removeIf{m -> m.channel == mes.channel} // Make sure that no requests are in receivedRequests if we find the cycle
 
-            val cycleTag = Tag()
+            val cycleTag = Tag.createTag()
             val channelDemand = mes.channel.getDemand(null)
             cycleChannelPairsMap.put(cycleTag, CycleChannelPair(mes.channel, anonIdChannelMap.get(channelAnonId)!!, channelDemand, false))
             sentSuccessChannel.add(mes.channel)
@@ -206,22 +208,32 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         return false
     }
 
-    suspend fun handleRequestMessage(mes: RequestRebalancingMessage) {
+    suspend fun checkSleepyMessages(mes: RebalancingMessage, notRequest: Boolean): Boolean {
         if (this.executionId != null && this.result == null) { // Participant discovery has started but is not finished
+            logger.warn("Not finished with part. discovery!")
             sendMessage(mes) // Add message to back of queue to try again later
-            return
+            return false
         }
 
         if (!this.checkMessage(mes, false) || !this.wakeUp()) {
-            return
+            return false
         }
 
         if (this.orderOfStarting!!.indexOf(mes.startId) > this.roundIndex) { // If the message received is from a later round, put it back in the queue
+            logger.warn("Message is for future round!")
             sendMessage(mes) // Add message to back of queue to try again later
-            return
+            return false
         } else if (this.orderOfStarting!!.indexOf(mes.startId) < this.roundIndex) { // If the message is from an earlier round, deny straight away
             logger.warn("Received message $mes from earlier round")
-            sendMessage(FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_ROUND, mes.startId, this.executionId))
+            if (!notRequest) { sendMessage(FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_ROUND, mes.startId, this.executionId)) }
+            return false
+        }
+
+        return true
+    }
+
+    suspend fun handleRequestMessage(mes: RequestRebalancingMessage) {
+        if (!this.checkSleepyMessages(mes, false)) {
             return
         }
 
@@ -230,7 +242,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         if (roundStateMachine.isInState(RoundState.WAIT)) {
             roundStateMachine.state = RoundState.REQ
             for (channel in outgoingDemandEdges) {
-                val channelAnonId = Tag()
+                val channelAnonId = Tag.createTag()
                 anonIdChannelMap.put(channelAnonId, channel)
                 receivedReqTags.addAll(mes.seenSet)
                 val seenSet = receivedReqTags.plus(channelAnonId)
@@ -273,7 +285,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         roundMessageHistory.add(mes)
 
         if (!roundStateMachine.isInState(RoundState.REQ)) {
-            logger.debug("Ignoring update because already in another roundState")
+            // logger.debug("Ignoring update because already in another roundState")
             return
         }
 
@@ -494,7 +506,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             receivedCycleCommits.add(mes)
         }
 
-        // logger.debug("#ofReceivedCommits: ${receivedCommits.size} #ofReceivedCycleCommits: ${receivedCycleCommits.size} #ofIgnoredCycles: $nOfIgnoredCycles #ofReceivedRequests: ")
         if (receivedCommits.size + receivedCycleCommits.size + nOfIgnoredCycles == receivedRequests.size + cycleChannelPairsMap.size) {
             logger.info("Received all commits from requesting and cycle channels")
 
@@ -535,6 +546,12 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                 }
             } else {
                 logger.debug("Still waiting for ${tagTransactionMap.keys}")
+            }
+        } else {
+            logger.debug("#ofReceivedCommits: ${receivedCommits.size} #ofReceivedCycleCommits: ${receivedCycleCommits.size} #ofIgnoredCycles: $nOfIgnoredCycles #ofReceivedRequests: ${receivedRequests.size} #ofCycleChannelPairsMap ${cycleChannelPairsMap.size}")
+            val nodesThatStillNeedToCommit = receivedRequests.map {m -> m.sender } .subtract(receivedCommits.map {m -> m.sender })
+            for (node in nodesThatStillNeedToCommit) {
+                logger.debug("$node still needs to send a commit message")
             }
         }
     }
@@ -583,16 +600,14 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     }
 
     suspend fun handleNextRoundMessage(mes: NextRoundMessage) {
-        if (!rebalancingAwake || mes.startId != getRoundStarter()) {
+        if (!this.checkSleepyMessages(mes, true)) {
             return
         }
-
-        if (!this.checkMessage(mes)) { return }
 
         roundMessageHistory.add(mes)
 
         if (!forwardedNextRoundMessage) {
-            for (channel in outgoingDemandEdges.plus(incomingDemandEdges)) {
+            for (channel in outgoingDemandEdges.union(incomingDemandEdges)) {
                 sendMessage(NextRoundMessage(MessageTypes.NEXT_ROUND_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), executionId!!))
             }
             forwardedNextRoundMessage = true
@@ -606,6 +621,10 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
     fun getRoundStarter(): Tag {
         return this.orderOfStarting!![this.roundIndex]
+    }
+
+    fun getRoundStarterAsNode(): Node {
+        return g.graph.vertexSet().filter {v -> (v as CoinWasherNode).anonId == this.getRoundStarter()} .first()
     }
 
     fun iStartedRound(): Boolean {
@@ -695,6 +714,8 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             return terminateRebalancing(true)
         }
 
+        logger.debug("${getRoundStarterAsNode()} is round starter")
+
         if (iStartedRound()) {
             this.startRound()
         }
@@ -712,5 +733,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         rebalancingAwake = false
         outgoingDemandEdges = HashSet()
         incomingDemandEdges = HashSet()
+        this.reset()
     }
 }

@@ -46,10 +46,10 @@ open class Node(val id: Int, val g: ChannelNetwork) {
     private fun canLogMessage(message: Message): Boolean {
         return (
             message is PaymentMessage ||
-            // message is ParticipantMessage ||
+            message is ParticipantMessage ||
             message is RebalancingMessage || message is FailRebalancingMessage ||
             message is ReviveMessage
-        )
+        ) && message.type != MessageTypes.UPDATE_R
 
     }
 
@@ -70,8 +70,8 @@ open class Node(val id: Int, val g: ChannelNetwork) {
             }
         }
 
-        val randomDelay = SeededRandom.random.nextLong(200)
-        delay(randomDelay)
+        val randomDelay = SeededRandom.random.nextLong(5)
+        delay(randomDelay) // Never disable delay! This causes the async scheduler to keep scheduling the same node, resulting in a infinite loop
 
         // Log number of messages
         when (message.type) {

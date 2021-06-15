@@ -174,7 +174,7 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
             if (this.locked) {
                 return
             }
-            println("Locking $this")
+            //println("Locking $this")
             this.locked = true
 
             if (this.hasOngoingTx()) {
@@ -188,7 +188,7 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
             if (!this.locked) {
                 return
             }
-            println("Unlocking $this")
+            //println("Unlocking $this")
             this.locked = false
         }
     }

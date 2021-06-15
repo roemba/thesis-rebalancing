@@ -43,8 +43,8 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
     suspend fun findParticipants(hopCount: Int) {
         this.awake = true
         this.started = true
-        executionId = Tag()
-        anonId = Tag()
+        executionId = Tag.createTag()
+        anonId = Tag.createTag()
         participants.add(anonId!!)
 
         logger.info("Starting to find participants with execution id: $executionId and participant id: $anonId")
@@ -74,16 +74,17 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
             return sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, mes.sender, mes.channel, executionId!!))
         }
 
-        // If not already claimed, become claimed
-        if (executionId == null) {
+        // If not already claimed or finished, become claimed
+        if (executionId == null && result == null) {
             executionId = mes.executionId
-            anonId = Tag()
+            anonId = Tag.createTag()
             participants.add(anonId!!)
             parentEdge = mes.channel
             logger.info("Claimed by execution id: $executionId using participant id: $anonId, parentEdge: $parentEdge")
         
             // If hop count is 0, terminate search
             if (mes.hopCount - 1 == 0) {
+                this.awake = true
                 edgesIAccepted.add(mes.channel)
                 return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants))
             }
