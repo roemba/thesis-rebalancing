@@ -171,6 +171,10 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
     @Throws(IllegalStateException::class)
     suspend fun lock() {
         mutex.withLock {
+            if (this.locked) {
+                return
+            }
+            println("Locking $this")
             this.locked = true
 
             if (this.hasOngoingTx()) {
@@ -181,6 +185,10 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
 
     suspend fun unlock() {
         mutex.withLock {
+            if (!this.locked) {
+                return
+            }
+            println("Unlocking $this")
             this.locked = false
         }
     }

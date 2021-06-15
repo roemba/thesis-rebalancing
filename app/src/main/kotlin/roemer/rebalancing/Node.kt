@@ -8,6 +8,7 @@ import org.jgrapht.Graph
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.graph.DefaultWeightedEdge
 import kotlinx.coroutines.delay
+import roemer.revive.ReviveMessage
 
 open class Node(val id: Int, val g: ChannelNetwork) {
     val paymentChannels: MutableList<PaymentChannel> = ArrayList()
@@ -42,6 +43,16 @@ open class Node(val id: Int, val g: ChannelNetwork) {
         )
     }
 
+    private fun canLogMessage(message: Message): Boolean {
+        return (
+            message is PaymentMessage ||
+            // message is ParticipantMessage ||
+            message is RebalancingMessage || message is FailRebalancingMessage ||
+            message is ReviveMessage
+        )
+
+    }
+
     suspend fun sendMessage(message: Message, direct: Boolean = false) {
         if (!direct) {
             var recipientNode: Node? = null
@@ -72,7 +83,7 @@ open class Node(val id: Int, val g: ChannelNetwork) {
             }
         }
 
-        if (true || message.type in arrayOf(MessageTypes.REQUEST_R, MessageTypes.EXEC_R, MessageTypes.COMMIT_R, MessageTypes.SUCCESS_R, MessageTypes.FAIL_R, MessageTypes.UPDATE_R, MessageTypes.NEXT_ROUND_R)) {
+        if (this.canLogMessage(message)) {
             logger.debug("Send $message")
         }
         message.recipient.messageChannel.send(message)
@@ -83,10 +94,10 @@ open class Node(val id: Int, val g: ChannelNetwork) {
         while (!messageChannel.isClosedForReceive) {
             val message = messageChannel.receive()
 
-            
-            if (true || message.type in arrayOf(MessageTypes.REQUEST_R, MessageTypes.EXEC_R, MessageTypes.COMMIT_R, MessageTypes.SUCCESS_R, MessageTypes.FAIL_R, MessageTypes.UPDATE_R, MessageTypes.NEXT_ROUND_R)) {
+            if (this.canLogMessage(message)) {
                 logger.debug("Received $message")
             }
+
             if (message.recipient !== this) {
                 sendMessage(message)
                 return

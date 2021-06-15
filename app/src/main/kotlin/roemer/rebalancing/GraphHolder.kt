@@ -25,6 +25,7 @@ class GraphHolder {
     val g: ChannelNetwork
     val nodes: List<Node>
     val rebalancerType: RebalancerTypes
+    val channelBalances: MutableMap<PaymentChannel, Int> = HashMap()
 
     constructor (g: ChannelNetwork, nodes: List<Node>, rebalancerType: RebalancerTypes) {
         this.g = g
@@ -78,12 +79,7 @@ class GraphHolder {
 
     fun start () {
         runBlocking {
-            if (rebalancerType == RebalancerTypes.Revive) {
-                for (node in nodes) {
-                    val n = node as ReviveNode
-                    n.threshold = 4
-                }
-            }
+            saveChannelBalances()
 
             for (node in nodes) {
                 launch { node.receiveMessage() }
@@ -131,9 +127,11 @@ class GraphHolder {
 
             delay(30000)
             println()
-
+            
             printChannelBalances()
-            var nOfAwake = 0
+            calculateScore()
+            var nOfParticipantAwake = 0
+            var nOfRebalancingAwake = 0
             var totalNumberOfTransactionMessages = 0
             var totalNumberOfParticipantMessages = 0
             var totalNumberOfRebalancingMessages = 0
@@ -145,15 +143,41 @@ class GraphHolder {
 
                 if (node.awake) {
                     println(node)
-                    nOfAwake++
+                    nOfParticipantAwake++
+                }
+
+                val t = nodes[i] as Rebalancer
+                if (t.isRebalancingAwake()) {
+                    println(node)
+                    nOfRebalancingAwake++
                 }
             }
-            println("Awake nodes: $nOfAwake")
+            println("Awake participant nodes: $nOfParticipantAwake")
+            println("Awake rebalancing nodes: $nOfRebalancingAwake")
             println("Total # of tx messages: $totalNumberOfTransactionMessages")
             println("Total # of participant messages: $totalNumberOfParticipantMessages")
             println("Total # of rebalancing messages: $totalNumberOfRebalancingMessages")
             println("Total # of messages: ${totalNumberOfTransactionMessages + totalNumberOfParticipantMessages + totalNumberOfRebalancingMessages}")
         }
+    }
+
+    private fun saveChannelBalances() {
+        for (channel in g.getChannelSet()) {
+            channelBalances.put(channel, channel.getCurrentDemand(null))
+        }
+    }
+
+    private fun calculateScore() {
+        var score = 0
+        println("Rebalancing success:")
+        for (channel in g.getChannelSet()) {
+            val oldDemand = channelBalances.get(channel)!!
+            val channelScore = oldDemand - channel.getCurrentDemand(null)
+            assert(channelScore >= 0)
+            println("$channelScore/$oldDemand -> $channel")
+            score += channelScore
+        }
+        println("Total score: $score")
     }
 
     private fun printChannelBalances() {

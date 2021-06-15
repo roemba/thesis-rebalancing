@@ -33,11 +33,9 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
     var denyMessages: MutableList<ReviveMessage> = ArrayList()
     var demandMessages: MutableList<DemandMessage> = ArrayList()
 
-    var threshold: Int? = null
-        set(newThreshold) {
-            logger.debug("Setting threshold to $newThreshold")
-            field = newThreshold
-        }
+    override fun isRebalancingAwake(): Boolean {
+        return this.rebalancingAwake
+    }
 
     override suspend fun rebalance(hopCount: Int) {
         logger.info("Starting participant discovery before rebalancing")
@@ -146,11 +144,7 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
         if (stateMachine.isInState(State.WAITING)) {
             initMessages.add(message)
 
-            if (threshold == null) {
-                throw IllegalArgumentException("Threshold cannot be null!")
-            }
-
-            if (initMessages.size >= threshold!!) {
+            if (initMessages.size == this.orderOfStarting!!.size - 1) {
                 stateMachine.state = State.CONFIRMATION
                 for (m in initMessages) {
                     sendMessage(ReviveMessage(MessageTypes.CONFIRM_REQ_REV, this, m.sender, this.executionId!!), true)

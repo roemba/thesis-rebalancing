@@ -87,6 +87,10 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
     }
 
+    override fun isRebalancingAwake(): Boolean {
+        return this.rebalancingAwake
+    }
+
     override suspend fun rebalance(hopCount: Int) {
         logger.info("Starting participant discovery before rebalancing")
 
@@ -116,6 +120,11 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
     suspend fun startRound() {
         logger.info("$anonId is starting round $roundIndex!")
+
+        // If round starter has no outgoing edges, move directly to next round
+        if (outgoingDemandEdges.size == 0) {
+            return nextRound()
+        }
 
         roundStateMachine.state = RoundState.REQ
         for (channel in outgoingDemandEdges) {
@@ -336,21 +345,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             return
         }
 
-        // Check if the startChannels of the cycles have replied with a success containing the cycle tag
-        // val successChannels: Map<PaymentChannel, SuccessRebalancingMessage> = receivedSuccesses.associate { Pair(it.channel, it) }
-        // val iter = cycleChannelPairsMap.iterator()
-        // while (iter.hasNext()) {
-        //     val entry = iter.next()
-        //     val startSuccessMessage = successChannels.get(entry.value.startChannel)
-        //     val tags = startSuccessMessage!!.tagList.map { i -> i.tag }
-        //     if (!(entry.key in tags)) {
-        //         logger.warn("Cycle ${entry.key} has not responded on starting channel, to prevent double claiming, deleting from pair and successMap")
-        //         iter.remove()
-        //         receivedSuccesses.remove(startSuccessMessage)
-        //         nOfIgnoredCycles++
-        //     }
-        // }
-
         for (success in receivedSuccesses) {
             for (tagDemandPair in success.tagList) {
                 if (tagDemandPair.tag in cycleChannelPairsMap) { 
@@ -523,6 +517,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                     if (tagDemandPair.tag in commit.tagTxMap) {
                         val preImage = htlcMap.get(tagDemandPair.tag)!!
                         commit.channel.executeTx(commit.tagTxMap.get(tagDemandPair.tag)!!, digest.digest(preImage.encodeToByteArray()))
+                        commit.channel.unlock()
                         sendMessage(ExecuteRebalancingMessage(
                             MessageTypes.EXEC_R, this, commit.channel.getOppositeNode(this), commit.channel, this.getRoundStarter(), this.executionId!!,
                             tagDemandPair.tag, preImage
@@ -568,6 +563,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         val entryValue = tagTransactionMap.get(mes.tag)!!
         logger.info("Executing ${mes.tag}")
         entryValue.first.executeTx(entryValue.second, digest.digest(mes.preImage.encodeToByteArray()))
+        entryValue.first.unlock()
         sendMessage(ExecuteRebalancingMessage(
             MessageTypes.EXEC_R, this, entryValue.first.getOppositeNode(this), entryValue.first, this.getRoundStarter(), this.executionId!!,
             mes.tag, mes.preImage
@@ -657,11 +653,18 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     }
 
     suspend fun nextRound() {
+        // Unlock all incoming edges for normal txs, as those can only be executed by current node
+        for (channel in incomingDemandEdges) {
+            assert(!channel.hasOngoingTx())
+            channel.unlock()    
+        }
+
         if (iStartedRound()) {
-            for (channel in outgoingDemandEdges.plus(incomingDemandEdges)) {
+            for (channel in outgoingDemandEdges.union(incomingDemandEdges)) {
                 sendMessage(NextRoundMessage(MessageTypes.NEXT_ROUND_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), executionId!!))
             }
         }
+
 
         roundIndex++
         logger.debug("Going to round $roundIndex!")
