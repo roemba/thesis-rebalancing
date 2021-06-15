@@ -164,25 +164,22 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
     }
 
-    suspend fun checkMessage(mes: RebalancingMessage, notRequest: Boolean = true): Boolean {
+    suspend fun checkMessage(mes: RebalancingMessage, notRequest: Boolean = true): Message? {
         if (this.executionId == null || this.executionId != mes.executionId) {
-            sendMessage(FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_EXECUTION_ID, mes.startId, this.executionId))
-            return false
+            return FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_EXECUTION_ID, mes.startId, this.executionId)
         }
 
         if (notRequest) {
             if (!this.rebalancingAwake) {
-                sendMessage(FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.NOT_AWAKE, mes.startId, this.executionId))
-                return false
+                return FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.NOT_AWAKE, mes.startId, this.executionId)
             }
-            if (this.orderOfStarting!![this.roundIndex] != mes.startId) {
+            if (this.getRoundStarter() != mes.startId) {
                 logger.error("Received non-request from a different round!")
-                sendMessage(FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_ROUND, mes.startId, this.executionId))
-                return false
+                return FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_ROUND, mes.startId, this.executionId)
             }
         }
 
-        return true
+        return null
     }
 
 
@@ -208,33 +205,34 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         return false
     }
 
-    suspend fun checkSleepyMessages(mes: RebalancingMessage, notRequest: Boolean): Boolean {
+    suspend fun checkSleepyMessages(mes: RebalancingMessage): Message? {
         if (this.executionId != null && this.result == null) { // Participant discovery has started but is not finished
             logger.warn("Not finished with part. discovery!")
-            sendMessage(mes) // Add message to back of queue to try again later
-            return false
+            return mes // Add message to back of queue to try again later
         }
 
-        if (!this.checkMessage(mes, false) || !this.wakeUp()) {
-            return false
+        val checkValue = this.checkMessage(mes, false)
+        if (checkValue != null) {
+            return checkValue
         }
+
+        this.wakeUp()
 
         if (this.orderOfStarting!!.indexOf(mes.startId) > this.roundIndex) { // If the message received is from a later round, put it back in the queue
             logger.warn("Message is for future round!")
-            sendMessage(mes) // Add message to back of queue to try again later
-            return false
+            return mes // Add message to back of queue to try again later
         } else if (this.orderOfStarting!!.indexOf(mes.startId) < this.roundIndex) { // If the message is from an earlier round, deny straight away
             logger.warn("Received message $mes from earlier round")
-            if (!notRequest) { sendMessage(FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_ROUND, mes.startId, this.executionId)) }
-            return false
+            return FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_ROUND, mes.startId, this.executionId)
         }
 
-        return true
+        return null
     }
 
     suspend fun handleRequestMessage(mes: RequestRebalancingMessage) {
-        if (!this.checkSleepyMessages(mes, false)) {
-            return
+        val checkValue = this.checkSleepyMessages(mes)
+        if (checkValue != null) {
+            return sendMessage(checkValue)
         }
 
         roundMessageHistory.add(mes)
@@ -280,7 +278,8 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     }
 
     suspend fun handleUpdateMessage(mes: UpdateRebalancingMessage) {
-        if (!this.checkMessage(mes)) { return }
+        val checkValue = this.checkMessage(mes, true)
+        if (checkValue != null) { return sendMessage(checkValue) }
 
         roundMessageHistory.add(mes)
 
@@ -312,7 +311,8 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     }
 
     suspend fun handleSuccessMessage(mes: SuccessRebalancingMessage) {
-        if (!this.checkMessage(mes)) { return }
+        val checkValue = this.checkMessage(mes, true)
+        if (checkValue != null) { return sendMessage(checkValue) }
 
         if (mes.channel in channelSuccessMessage) {
             throw Error("Already gotten success message this round from channel ${mes.channel}!")
@@ -325,10 +325,10 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         if (roundStateMachine.isInState(RoundState.REQ)) {
             receivedSuccesses.add(mes)
             nOfOutstandingRequests--
-        }
 
-        if (nOfOutstandingRequests == 0) {
-            replyToRequests()
+            if (nOfOutstandingRequests == 0) {
+                replyToRequests()
+            }
         }
     }
 
@@ -341,10 +341,10 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
         if (roundStateMachine.isInState(RoundState.REQ)) {
             nOfOutstandingRequests--
-        }
 
-        if (nOfOutstandingRequests == 0) {
-            replyToRequests()
+            if (nOfOutstandingRequests == 0) {
+                replyToRequests()
+            }
         }
     }
 
@@ -387,6 +387,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             commitSource()
         } else {
             val F = G.entries.toList()
+            assert(receivedRequests.isNotEmpty())
             for (request in receivedRequests) {
                 val N = splitEqually(request.channel.getDemand(null), F.map { e -> e.value.first }.toIntArray())
                 val K: MutableList<TagDemandPair> = ArrayList()
@@ -437,13 +438,14 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             }
         }
 
-        if (receivedRequests.size + cycleChannelPairsMap.size == 0) { // If no requests and cycles exist including the source, continue to nextRound
+        if (receivedRequests.size + cycleChannelPairsMap.size - nOfIgnoredCycles == 0) { // If no requests and cycles exist including the source, continue to nextRound
             nextRound()
         }
     }
 
     suspend fun handleCommitMessage(mes: CommitRebalancingMessage) {
-        if (!this.checkMessage(mes)) { return }
+        val checkValue = this.checkMessage(mes, true)
+        if (checkValue != null) { return sendMessage(checkValue) }
 
         roundMessageHistory.add(mes)
 
@@ -453,7 +455,14 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             channelCommitMessage.add(mes.channel)
         }
 
-        roundStateMachine.state = RoundState.COM
+        if (roundStateMachine.isInState(RoundState.SUC)) {
+            roundStateMachine.state = RoundState.COM
+        }
+
+        if (!roundStateMachine.isInState(RoundState.COM)) {
+            return
+        }
+        
         val cycleEndChannels = cycleChannelPairsMap.values.map { v -> v.endChannel }
         if (!(mes.channel in cycleEndChannels)) {
             receivedCommits.add(mes)
@@ -470,8 +479,10 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                 for (entry in cycleChannelPairsMap.entries) {
                     if (!entry.value.completed) {
                         logger.debug("Cycle ${entry.key} not complete, skipping...")
+                        nOfIgnoredCycles++
                         continue
                     }
+
                     var htlc: ByteArray? = null
                     if (entry.value.demand > 0) {
                         val preImage = UUID.randomUUID().toString()
@@ -483,6 +494,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                     val pairs = K.getOrPut(entry.value.startChannel, { ArrayList() })
                     pairs.add(TagDemandHTLCPair(entry.key, entry.value.demand, htlc))
                 }
+
                 for (channel in outgoingDemandEdges) {
                     if (channel in K) {
                         val tagTxMap: MutableMap<Tag, Transaction> = HashMap()
@@ -561,7 +573,8 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             return
         }
 
-        if (!this.checkMessage(mes)) { return }
+        val checkValue = this.checkMessage(mes, true)
+        if (checkValue != null) { return sendMessage(checkValue) }
 
         if (roundStateMachine.isInState(RoundState.COM)) {
             sendMessage(mes) // Add message to back of queue to try again later
@@ -600,14 +613,12 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     }
 
     suspend fun handleNextRoundMessage(mes: NextRoundMessage) {
-        if (!this.checkSleepyMessages(mes, true)) {
-            return
-        }
+        if (this.checkSleepyMessages(mes) != null) { return }
 
         roundMessageHistory.add(mes)
 
         if (!forwardedNextRoundMessage) {
-            for (channel in outgoingDemandEdges.union(incomingDemandEdges)) {
+            for (channel in outgoingDemandEdges.plus(incomingDemandEdges)) {
                 sendMessage(NextRoundMessage(MessageTypes.NEXT_ROUND_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), executionId!!))
             }
             forwardedNextRoundMessage = true
@@ -623,8 +634,8 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         return this.orderOfStarting!![this.roundIndex]
     }
 
-    fun getRoundStarterAsNode(): Node {
-        return g.graph.vertexSet().filter {v -> (v as CoinWasherNode).anonId == this.getRoundStarter()} .first()
+    fun getRoundStarterAsNode(): Node? {
+        return g.graph.vertexSet().filter {v -> (v as CoinWasherNode).anonId == this.getRoundStarter()} .firstOrNull()
     }
 
     fun iStartedRound(): Boolean {
@@ -674,12 +685,17 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     suspend fun nextRound() {
         // Unlock all incoming edges for normal txs, as those can only be executed by current node
         for (channel in incomingDemandEdges) {
-            assert(!channel.hasOngoingTx())
+            if (!channel.hasOngoingTx()) {
+                channel.unlock()    
             channel.unlock()    
+                channel.unlock()    
+            channel.unlock()    
+                channel.unlock()    
+            }
         }
 
         if (iStartedRound()) {
-            for (channel in outgoingDemandEdges.union(incomingDemandEdges)) {
+            for (channel in outgoingDemandEdges.plus(incomingDemandEdges)) {
                 sendMessage(NextRoundMessage(MessageTypes.NEXT_ROUND_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), executionId!!))
             }
         }
@@ -703,9 +719,9 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         htlcMap = HashMap()
         tagTransactionMap = HashMap()
         sentSuccessChannel = HashSet()
-        nOfIgnoredCycles = 0
         forwardedNextRoundMessage = false
         safe = false
+        nOfIgnoredCycles = 0
 
         channelSuccessMessage = HashSet()
         channelCommitMessage = HashSet()
