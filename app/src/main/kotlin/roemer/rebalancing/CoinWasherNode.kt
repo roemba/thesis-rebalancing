@@ -91,10 +91,10 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         return this.rebalancingAwake
     }
 
-    override suspend fun rebalance(hopCount: Int) {
+    override suspend fun rebalance(hopCount: Int, maxNOfInvites: Int) {
         logger.info("Starting participant discovery before rebalancing")
 
-        this.findParticipants(hopCount)
+        this.findParticipants(hopCount, maxNOfInvites)
     }
 
     override suspend fun rebalancingClient() {

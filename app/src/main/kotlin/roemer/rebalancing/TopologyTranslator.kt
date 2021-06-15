@@ -63,7 +63,7 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String,
                 println("Self-loop found!")
             }
 
-            g.addChannel(srcNode, dstNode, 2, 5) // Temporarily hardcoded balances
+            if (SeededRandom.random.nextBoolean()) g.addChannel(srcNode, dstNode, 2, 70) else g.addChannel(srcNode, dstNode, 70, 2)
         }
 
         println("Read ${jsonNodes.size} nodes of which $duplicateNodeId were invalid")

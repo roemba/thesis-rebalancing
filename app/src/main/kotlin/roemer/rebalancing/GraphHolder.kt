@@ -90,7 +90,7 @@ class GraphHolder {
             println("Rebalancer type $rebalancerType")
 
             val startNode = nodes[0] as Rebalancer
-            startNode.rebalance(20)
+            startNode.rebalance(3, 20)
             // println(nodes[0].splitEqually(112, intArrayOf(10, 30, 20, 3, 50)).contentToString())
             // nodes[4].startFindingParticipants(20)
 
@@ -125,10 +125,10 @@ class GraphHolder {
             //     // break
             // }
 
-            delay(30000)
+            delay(120 * 1000)
             println()
             
-            printChannelBalances()
+            // printChannelBalances()
             calculateScore()
             var nOfParticipantAwake = 0
             var nOfRebalancingAwake = 0
@@ -174,7 +174,7 @@ class GraphHolder {
             val oldDemand = channelBalances.get(channel)!!
             val channelScore = oldDemand - channel.getCurrentDemand(null)
             assert(channelScore >= 0)
-            println("$channelScore/$oldDemand -> $channel")
+            // println("$channelScore/$oldDemand -> $channel")
             score += channelScore
         }
         println("Total score: $score")

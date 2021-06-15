@@ -80,10 +80,11 @@ class InviteParticipantMessage(
     recipient: Node,
     channel: PaymentChannel,
     executionId: Tag,
-    val hopCount: Int
+    val hopCount: Int,
+    val maxNumberOfInvites: Int
 ): ParticipantMessage(type, sender, recipient, channel, executionId) {
     override fun toString(): String {
-        return "InviteParticipantMessage(sender=$sender, recipient=$recipient, executionId=$executionId, hopCount=$hopCount, channel=${channel.id})"
+        return "InviteParticipantMessage(sender=$sender, recipient=$recipient, executionId=$executionId, hopCount=$hopCount, maxNumberOfInvites=$maxNumberOfInvites, channel=${channel.id})"
     }
 }
 

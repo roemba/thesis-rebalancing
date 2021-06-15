@@ -26,6 +26,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
     var receivedResponses = 0
     var sendFinalList = false
     var result: ParticipantFindingResult? = null
+
     var resultReadyChannel: Channel<Boolean> = Channel(0) // Rendezvous channel
     
     override suspend fun sortMessage (message: Message) {
@@ -40,7 +41,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         }
     }
 
-    suspend fun findParticipants(hopCount: Int) {
+    suspend fun findParticipants(hopCount: Int, maxNOfInvites: Int) {
         this.awake = true
         this.started = true
         executionId = Tag.createTag()
@@ -51,7 +52,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
 
         for (channel in this.paymentChannels) {
             sendMessage(InviteParticipantMessage(
-                MessageTypes.INVITE_P, this, channel.getOppositeNode(this), channel, executionId!!, hopCount
+                MessageTypes.INVITE_P, this, channel.getOppositeNode(this), channel, executionId!!, hopCount, maxNOfInvites
             ))
             invitedEdges.add(channel)
             nOfExpectedResponses++
@@ -95,10 +96,14 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
                 for (channel in this.paymentChannels) {
                     if (channel !== parentEdge && !(channel in deniedEdges)) {
                         sendMessage(InviteParticipantMessage(
-                            MessageTypes.INVITE_P, this, channel.getOppositeNode(this), channel, executionId!!, mes.hopCount - 1
+                            MessageTypes.INVITE_P, this, channel.getOppositeNode(this), channel, executionId!!, mes.hopCount - 1, mes.maxNumberOfInvites
                         ))
                         invitedEdges.add(channel)
                         nOfExpectedResponses++
+
+                        if (invitedEdges.size >= mes.maxNumberOfInvites) {
+                            break
+                        }
                     }
                 }
                 logger.debug("Invited $nOfExpectedResponses edges")
