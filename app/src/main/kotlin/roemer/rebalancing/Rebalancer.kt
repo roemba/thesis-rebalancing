@@ -1,7 +1,7 @@
 package roemer.rebalancing
 
 interface Rebalancer {
-    suspend fun rebalance(hopCount: Int, maxNOfInvites: Int)
-    suspend fun rebalancingClient()
+    fun startSubAlgos(hopCount: Int, maxNOfInvites: Int): SimulationInput
+    fun rebalance(event: StartStopEvent): SimulationInput
     fun isRebalancingAwake(): Boolean
 }

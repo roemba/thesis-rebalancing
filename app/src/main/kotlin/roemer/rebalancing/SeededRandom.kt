@@ -8,21 +8,16 @@ import kotlinx.coroutines.sync.withLock
 class SeededRandom {
     companion object {
         val random = Random(42)
-        var counter = 0
-        val lock = Mutex()
+        var counter = 0L
 
-        suspend fun getRandomUUID(): UUID {
-            lock.withLock() { 
-                val uuid = UUID.nameUUIDFromBytes(counter.toString().encodeToByteArray())
-                counter++
-                return uuid
-            }
+       fun getRandomUUID(): UUID {
+            val uuid = UUID.nameUUIDFromBytes(counter.toString().encodeToByteArray())
+            counter++
+            return uuid
         }
 
-        suspend fun getRandomInt(): Int {
-            lock.withLock() { 
-                return counter++
-            }
+        fun getIncreasingLong(): Long {
+            return counter++
         }
     } 
 }

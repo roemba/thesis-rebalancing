@@ -1,26 +1,29 @@
 package roemer.rebalancing
 
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.channels.Channel
 import org.jgrapht.GraphPath
 import org.jgrapht.Graphs
 import org.jgrapht.Graph
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.graph.DefaultWeightedEdge
-import kotlinx.coroutines.delay
 import roemer.revive.ReviveMessage
+import java.util.LinkedList
+import java.util.Queue
 
 open class Node(val id: Int, val g: ChannelNetwork) {
     val paymentChannels: MutableList<PaymentChannel> = ArrayList()
     val ongoingPayments: MutableMap<Payment, LocalPayment> = HashMap()
-    val messageChannel = Channel<Message>(Channel.UNLIMITED)
     val logger = Logger(this)
 
     var numberOfTransactionMessages = 0
     var numberOfParticipantMessages = 0
     var numberOfRebalancingMessages = 0
 
-    suspend fun startPayment(amount: Int, receiver: Node) {
+    var sendingList: MutableList<Message> = ArrayList()
+    var startStopDesc: StartStopDescription? = null
+    var sendingEnabled = false
+    var unprocessedMessages: MutableList<Message> = ArrayList()
+
+    fun startPayment(amount: Int, receiver: Node) {
         val payment = Payment(this, receiver, amount)
 
         val shortestPathDijkstra: DijkstraShortestPath<Node, DefaultWeightedEdge> = DijkstraShortestPath(g.graph)
@@ -53,7 +56,14 @@ open class Node(val id: Int, val g: ChannelNetwork) {
 
     }
 
-    suspend fun sendMessage(message: Message, direct: Boolean = false) {
+    fun sendMessage(message: Message, direct: Boolean = false) {
+        if (!sendingEnabled) throw IllegalStateException("Sending message while sending is not enabled!")
+
+        if (message.sender != this) {
+            this.unprocessedMessages.add(message)
+            return
+        }
+
         if (!direct) {
             var recipientNode: Node? = null
 
@@ -70,9 +80,6 @@ open class Node(val id: Int, val g: ChannelNetwork) {
             }
         }
 
-        val randomDelay = SeededRandom.random.nextLong(5)
-        delay(randomDelay) // Never disable delay! This causes the async scheduler to keep scheduling the same node, resulting in a infinite loop
-
         // Log number of messages
         when (message.type) {
             MessageTypes.REQ_TX, MessageTypes.EXEC_TX, MessageTypes.ABORT_TX -> this.numberOfTransactionMessages++
@@ -86,44 +93,63 @@ open class Node(val id: Int, val g: ChannelNetwork) {
         if (this.canLogMessage(message)) {
             logger.debug("Send $message")
         }
-        message.recipient.messageChannel.send(message)
+        
+        sendingList.add(message)
     }
 
-    @ExperimentalCoroutinesApi
-    suspend fun receiveMessage() {
-        while (!messageChannel.isClosedForReceive) {
-            val message = messageChannel.receive()
+    fun initMessageSending() {
+        sendingList = ArrayList()
+        startStopDesc = null
+        sendingEnabled = true
+    }
 
-            if (this.canLogMessage(message)) {
-                logger.debug("Received $message")
-            }
-
-            if (message.recipient !== this) {
-                sendMessage(message)
-                return
-            }
-
-            sortMessage(message)
+    fun stopMessageSending() {
+        // Process any unprocessed messages
+        val copyOfList = this.unprocessedMessages.toMutableList()
+        for (mess in copyOfList) {
+            sortMessage(mess)
         }
+
+        if (this.unprocessedMessages.isNotEmpty()) {
+            logger.info("${this.unprocessedMessages.size} unprocessed messages")
+        }
+
+        sendingEnabled = false
     }
 
-    open suspend fun sortMessage(message: Message) {
+    fun receiveMessage(message: Message): SimulationInput {
+        this.initMessageSending()
+
+        if (this.canLogMessage(message)) {
+            logger.debug("Received $message")
+        }
+
+        if (message.recipient !== this) {
+            throw IllegalArgumentException("Message is not meant for me!")
+        }
+
+        sortMessage(message)
+
+        this.stopMessageSending()
+        return Pair(sendingList, startStopDesc)
+    }
+
+    open fun sortMessage(message: Message) {
         when (message.type) {
             MessageTypes.REQ_TX -> handleRequestTxMessage(message as RequestPaymentMessage)
             MessageTypes.EXEC_TX -> handleExecTxMessage(message as PaymentMessage)
-            MessageTypes.ABORT_TX -> handleAbortTxMessage(message as PaymentMessage)
+            MessageTypes.ABORT_TX ->  handleAbortTxMessage(message as PaymentMessage)
             else -> {
-                logger.error("Cannot process ${message.type}")
+                throw IllegalArgumentException("Cannot process ${message.type}")
             }
         }
     }
 
-    private suspend fun handleRequestTxMessage(mes: RequestPaymentMessage) {
+    private fun handleRequestTxMessage(mes: RequestPaymentMessage) {
         if (this === mes.path.endVertex) {
             sendMessage(
                 PaymentMessage(MessageTypes.EXEC_TX, this, mes.sender, mes.channel, mes.payment)
             )
-            return
         }
 
         // Check if payment already known
@@ -154,7 +180,7 @@ open class Node(val id: Int, val g: ChannelNetwork) {
         )
     }
 
-    private suspend fun handleExecTxMessage(mes: PaymentMessage) {
+    private fun handleExecTxMessage(mes: PaymentMessage) {
         if (mes.payment !in ongoingPayments) {
             throw IllegalArgumentException("Payment ${mes.payment} never requested from $this")
         }
@@ -176,7 +202,7 @@ open class Node(val id: Int, val g: ChannelNetwork) {
         ongoingPayments.remove(mes.payment)
     }
 
-    private suspend fun handleAbortTxMessage(mes: PaymentMessage) {
+    private fun handleAbortTxMessage(mes: PaymentMessage) {
         if (mes.payment !in ongoingPayments) {
             throw IllegalArgumentException("Payment ${mes.payment} never requested from $this")
         }

@@ -11,7 +11,7 @@ import org.jgrapht.alg.connectivity.KosarajuStrongConnectivityInspector
 import org.jgrapht.graph.DefaultWeightedEdge
 import roemer.revive.ReviveNode
 
-class TopologyTranslator (val nodeFileName: String, val channelFileName: String, val rebalancerType: RebalancerTypes) {
+class TopologyTranslator (val nodeFileName: String, val channelFileName: String, val nodeType: NodeTypes) {
     val nodeResourcePath: String
     val channelResourcePath: String
 
@@ -42,9 +42,10 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String,
                 continue
             }
 
-            val n = when (this.rebalancerType) {
-                RebalancerTypes.CoinWasher -> CoinWasherNode(i, g)
-                RebalancerTypes.Revive -> ReviveNode(i, g)
+            val n = when (this.nodeType) {
+                NodeTypes.CoinWasher -> CoinWasherNode(i, g)
+                NodeTypes.Revive -> ReviveNode(i, g)
+                NodeTypes.ParticipantDisc -> ParticipantNodeAlt(i, g)
             }
             g.graph.addVertex(n)
             nodes.add(n)

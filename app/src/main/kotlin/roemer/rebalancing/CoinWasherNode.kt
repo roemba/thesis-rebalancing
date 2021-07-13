@@ -2,10 +2,6 @@ package roemer.rebalancing
 
 import java.util.UUID
 import java.security.MessageDigest
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 enum class RoundState {
     WAIT, REQ, SUC, COM, EXEC
@@ -65,14 +61,12 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     var safe = false
     
     // Need to be reset on class creation
-    var rebalancingReadyChannel: Channel<Boolean> = Channel(0) // Rendezvous channel
-    val lock = Mutex()
     val digest = MessageDigest.getInstance("SHA-256");
 
     var channelSuccessMessage: MutableSet<PaymentChannel> = HashSet()
     var channelCommitMessage: MutableSet<PaymentChannel> = HashSet()
     
-    override suspend fun sortMessage (message: Message) {
+    override fun sortMessage (message: Message) {
         when (message.type) {
             MessageTypes.REQUEST_R -> handleRequestMessage(message as RequestRebalancingMessage)
             MessageTypes.UPDATE_R -> handleUpdateMessage(message as UpdateRebalancingMessage)
@@ -91,30 +85,27 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         return this.rebalancingAwake
     }
 
-    override suspend fun rebalance(hopCount: Int, maxNOfInvites: Int) {
+    override fun startSubAlgos(hopCount: Int, maxNOfInvites: Int): SimulationInput {
         logger.info("Starting participant discovery before rebalancing")
 
-        this.findParticipants(hopCount, maxNOfInvites)
+        return this.findParticipants(hopCount, maxNOfInvites)
     }
 
-    override suspend fun rebalancingClient() {
-        while (true) {
-            val foundParticipantsResult = resultReadyChannel.receive()
-
-            logger.info("Participant discovery finished with result ") //$foundParticipantsResult, ${result!!.acceptedEdges}")
-
-            if (!foundParticipantsResult) {
-                logger.warn("No participant result found!")
-                continue
-            }
-            
-            this.wakeUp()
-
-            rebalancingReadyChannel.receive()
+    override fun rebalance(event: StartStopEvent): SimulationInput {
+        logger.info("Participant discovery finished with result ") //$foundParticipantsResult, ${result!!.acceptedEdges}")
+        if (event.desc.algorithm != Algorithm.ParticipantDisc) {
+            throw IllegalArgumentException("Rebalancing may only be woken up after participant discovery is done!")
         }
+
+        this.initMessageSending()
+
+        this.wakeUp()
+
+        this.stopMessageSending()
+        return Pair(this.sendingList, this.startStopDesc)
     }
 
-    suspend fun startRound() {
+    fun startRound() {
         logger.info("$anonId is starting round $roundIndex!")
 
         // If round starter has no outgoing edges, move directly to next round
@@ -133,38 +124,36 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
     }
 
-    suspend fun wakeUp(): Boolean {
-        lock.withLock { 
-            if (this.rebalancingAwake) {
-                return true // Already awake
-            }
-
-            logger.debug("I'm waking up!")
-
-            this.orderOfStarting = this.result!!.finalParticipants.toList().sorted()
-            this.rebalancingAwake = true
-
-            for (channel in this.result!!.acceptedEdges) {
-                val demand = channel.getDemand(this)
-                // logger.debug("Sorting $channel with balance $demand")
-                if (demand < 0) {
-                    outgoingDemandEdges.add(channel)
-                } else {
-                    incomingDemandEdges.add(channel)
-                }
-            }
-
-            logger.debug("${getRoundStarterAsNode()} is round starter")
-
-            if (iStartedRound()) {
-                this.startRound()
-            }
-
-            return true
+    fun wakeUp(): Boolean {
+        if (this.rebalancingAwake) {
+            return true // Already awake
         }
+
+        logger.debug("I'm waking up!")
+
+        this.orderOfStarting = this.result!!.finalParticipants.toList().sorted()
+        this.rebalancingAwake = true
+
+        for (channel in this.result!!.acceptedEdges) {
+            val demand = channel.getDemand(this)
+            // logger.debug("Sorting $channel with balance $demand")
+            if (demand < 0) {
+                outgoingDemandEdges.add(channel)
+            } else {
+                incomingDemandEdges.add(channel)
+            }
+        }
+
+        logger.debug("${getRoundStarterAsNode()} is round starter")
+
+        if (iStartedRound()) {
+            this.startRound()
+        }
+
+        return true
     }
 
-    suspend fun checkMessage(mes: RebalancingMessage, notRequest: Boolean = true): Message? {
+    fun checkMessage(mes: RebalancingMessage, notRequest: Boolean = true): Message? {
         if (this.executionId == null || this.executionId != mes.executionId) {
             return FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_EXECUTION_ID, mes.startId, this.executionId)
         }
@@ -183,7 +172,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     }
 
 
-    suspend fun checkForCycles(mes: RequestRebalancingMessage, seenSetToCheck: Set<Tag>): Boolean {
+    fun checkForCycles(mes: RequestRebalancingMessage, seenSetToCheck: Set<Tag>): Boolean {
         val intersect = anonIdChannelMap.keys.intersect(seenSetToCheck)
         if (intersect.isNotEmpty()) {
             val channelAnonId = intersect.first() // We only care about one match
@@ -205,7 +194,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         return false
     }
 
-    suspend fun checkSleepyMessages(mes: RebalancingMessage): Message? {
+    fun checkSleepyMessages(mes: RebalancingMessage): Message? {
         if (this.executionId != null && this.result == null) { // Participant discovery has started but is not finished
             logger.warn("Not finished with part. discovery!")
             return mes // Add message to back of queue to try again later
@@ -229,7 +218,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         return null
     }
 
-    suspend fun handleRequestMessage(mes: RequestRebalancingMessage) {
+    fun handleRequestMessage(mes: RequestRebalancingMessage) {
         val checkValue = this.checkSleepyMessages(mes)
         if (checkValue != null) {
             return sendMessage(checkValue)
@@ -277,7 +266,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
     }
 
-    suspend fun handleUpdateMessage(mes: UpdateRebalancingMessage) {
+    fun handleUpdateMessage(mes: UpdateRebalancingMessage) {
         val checkValue = this.checkMessage(mes, true)
         if (checkValue != null) { return sendMessage(checkValue) }
 
@@ -310,7 +299,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
     }
 
-    suspend fun handleSuccessMessage(mes: SuccessRebalancingMessage) {
+    fun handleSuccessMessage(mes: SuccessRebalancingMessage) {
         val checkValue = this.checkMessage(mes, true)
         if (checkValue != null) { return sendMessage(checkValue) }
 
@@ -332,7 +321,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
     }
 
-    suspend fun handleFailMessage(mes: FailRebalancingMessage) {
+    fun handleFailMessage(mes: FailRebalancingMessage) {
         if (mes.reason != FailReason.NO_SUCCESS) {
             return
         }
@@ -348,7 +337,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
     }
 
-    suspend fun replyToRequests() {
+    fun replyToRequests() {
         if (roundStateMachine.isInState(RoundState.REQ)) {
             roundStateMachine.state = RoundState.SUC
         }
@@ -399,7 +388,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
     }
 
-    suspend fun commitSource() {
+    fun commitSource() {
         val P: MutableMap<PaymentChannel, Pair<MutableList<TagDemandHTLCPair>, MutableMap<Tag, Transaction>>> = HashMap()
         for (entry in cycleChannelPairsMap.entries) {
             if (!entry.value.completed) {
@@ -443,7 +432,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
     }
 
-    suspend fun handleCommitMessage(mes: CommitRebalancingMessage) {
+    fun handleCommitMessage(mes: CommitRebalancingMessage) {
         val checkValue = this.checkMessage(mes, true)
         if (checkValue != null) { return sendMessage(checkValue) }
 
@@ -568,7 +557,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
     }
 
-    suspend fun handleExecuteRebalancingMessage(mes: ExecuteRebalancingMessage) {
+    fun handleExecuteRebalancingMessage(mes: ExecuteRebalancingMessage) {
         if (!rebalancingAwake || mes.startId != getRoundStarter()) {
             return
         }
@@ -612,13 +601,13 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
     }
 
-    suspend fun handleNextRoundMessage(mes: NextRoundMessage) {
+    fun handleNextRoundMessage(mes: NextRoundMessage) {
         if (this.checkSleepyMessages(mes) != null) { return }
 
         roundMessageHistory.add(mes)
 
         if (!forwardedNextRoundMessage) {
-            for (channel in outgoingDemandEdges.plus(incomingDemandEdges)) {
+            for (channel in outgoingDemandEdges.union(incomingDemandEdges)) {
                 sendMessage(NextRoundMessage(MessageTypes.NEXT_ROUND_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), executionId!!))
             }
             forwardedNextRoundMessage = true
@@ -682,7 +671,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         return R
     }
 
-    suspend fun nextRound() {
+    fun nextRound() {
         // Unlock all incoming edges for normal txs, as those can only be executed by current node
         for (channel in incomingDemandEdges) {
             if (!channel.hasOngoingTx()) {
@@ -695,7 +684,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
 
         if (iStartedRound()) {
-            for (channel in outgoingDemandEdges.plus(incomingDemandEdges)) {
+            for (channel in outgoingDemandEdges.union(incomingDemandEdges)) {
                 sendMessage(NextRoundMessage(MessageTypes.NEXT_ROUND_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), executionId!!))
             }
         }
@@ -737,7 +726,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
     }
 
-    suspend fun terminateRebalancing(success: Boolean) {
+    fun terminateRebalancing(success: Boolean) {
         if (success) {
             logger.info("Finished rebalancing successfully")
         } else {
