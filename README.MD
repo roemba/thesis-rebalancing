@@ -26,3 +26,15 @@ A graph consists of `Node`s, which hold a `Queue` that receives messages from ot
 - Setup proper testing
 - Improve package structure, i.e. split `roemer/rebalancing` into model infrastructure and `CoinWasher` and split the `Message.kt` file into multiple, smaller files. 
 - Add execution independent time, i.e. event time
+
+## Logging
+
+In case of large logfiles, pipe the output as follows:
+
+```gradle run > log.txt```
+
+and use `less` to display it using:
+
+```less -R log.txt```
+
+which will instruct `less` to also print the correct terminal colors

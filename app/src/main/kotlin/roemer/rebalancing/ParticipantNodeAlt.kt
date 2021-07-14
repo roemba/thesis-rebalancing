@@ -1,10 +1,5 @@
 package roemer.rebalancing
 
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.channels.Channel
-
 data class ParticipantFindingResult (
     val executionId: Tag,
     val finalParticipants: Set<Tag>,
@@ -26,10 +21,8 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
     var receivedResponses = 0
     var sendFinalList = false
     var result: ParticipantFindingResult? = null
-
-    var resultReadyChannel: Channel<Boolean> = Channel(0) // Rendezvous channel
     
-    override suspend fun sortMessage (message: Message) {
+    override fun sortMessage (message: Message) {
         when (message.type) {
             MessageTypes.INVITE_P -> handleInviteMessage(message as InviteParticipantMessage)
             MessageTypes.FINISH_P -> handleFinishMessage(message as FinishParticipantMessage)
@@ -41,7 +34,9 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         }
     }
 
-    suspend fun findParticipants(hopCount: Int, maxNOfInvites: Int) {
+    fun findParticipants(hopCount: Int, maxNOfInvites: Int): SimulationInput {
+        this.initMessageSending()
+
         this.awake = true
         this.started = true
         executionId = Tag.createTag()
@@ -57,9 +52,12 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
             invitedEdges.add(channel)
             nOfExpectedResponses++
         }
+
+        this.stopMessageSending()
+        return Pair(sendingList, StartStopDescription(true, Algorithm.ParticipantDisc, this))
     } 
 
-    suspend fun handleInviteMessage(mes: InviteParticipantMessage) {
+    fun handleInviteMessage(mes: InviteParticipantMessage) {
         if (randomDeny && SeededRandom.random.nextInt(10) < 2) {
             deniedEdges.add(mes.channel)
         }
@@ -121,7 +119,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         }
     }
 
-    suspend fun handleAcceptMessage(mes: AcceptParticipantMessage) {
+    fun handleAcceptMessage(mes: AcceptParticipantMessage) {
         if (!awake) {
             return
         } else if (mes.executionId != executionId) {
@@ -142,7 +140,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         handleResponses()
     }
 
-    suspend fun handleDenyMessage(mes: ParticipantMessage) {
+    fun handleDenyMessage(mes: ParticipantMessage) {
         if (!awake) {
             return
         }
@@ -159,7 +157,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         handleResponses()
     }
 
-    suspend fun denyAndTerminate (reason: String) {
+    fun denyAndTerminate (reason: String) {
         if (!this.started) { 
             sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, parentEdge!!.getOppositeNode(this), parentEdge!!, executionId!!)) 
         }
@@ -167,7 +165,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         terminate(false, reason)
     }
 
-    suspend fun handleResponses() {
+    fun handleResponses() {
         nOfExpectedResponses--
         // if (nOfExpectedResponses < 5) {
         //     for (channel in invitedEdges) {
@@ -198,7 +196,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         }
     }
 
-    suspend fun handleFinishMessage(mes: FinishParticipantMessage) {
+    fun handleFinishMessage(mes: FinishParticipantMessage) {
         if (!awake) {
             return
         } else if (mes.executionId != executionId) {
@@ -217,7 +215,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
 
 
 
-    suspend fun terminate(success: Boolean, reason: String = "Unknown") {
+    fun terminate(success: Boolean, reason: String = "Unknown") {
         if (success) {
             // End result: participants and acceptedEdges, do not reset yet
             logger.info("Finished with participants size: ${participants.size}")
@@ -227,11 +225,9 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
             
             result = ParticipantFindingResult(executionId!!, participants.toSet(), edgesThatAcceptedInvite.plus(edgesIAccepted))
             awake = false // Prevent participant discovery from doing anything else
-            resultReadyChannel.send(true)
+            this.startStopDesc = StartStopDescription(false, Algorithm.ParticipantDisc, this)
         } else {
             logger.info("Finished but was not successfull because: $reason")
-
-            resultReadyChannel.send(false)
             reset()
         }
     }

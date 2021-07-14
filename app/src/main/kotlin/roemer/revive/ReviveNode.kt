@@ -1,16 +1,6 @@
 package roemer.revive
 
-import roemer.rebalancing.ChannelNetwork
-import roemer.rebalancing.ParticipantNodeAlt
-import roemer.rebalancing.Tag
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import roemer.rebalancing.PaymentChannel
-import kotlinx.coroutines.channels.Channel
-import roemer.rebalancing.MessageTypes
-import roemer.rebalancing.Node
-import roemer.rebalancing.Message
-import roemer.rebalancing.StateMachine
+import roemer.rebalancing.*
 import lpsolve.*
 import roemer.rebalancing.Rebalancer
 
@@ -20,13 +10,11 @@ enum class State {
 
 class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebalancer {
     var orderOfStarting: List<Tag>? = null
-    val lock = Mutex()
     var rebalancingAwake = false
     var outgoingDemandEdges: MutableSet<PaymentChannel> = HashSet()
     var incomingDemandEdges: MutableSet<PaymentChannel> = HashSet()
     var leader: Node? = null
 
-    var rebalancingReadyChannel: Channel<Boolean> = Channel(0) // Rendezvous channel
     var stateMachine = StateMachine<State>(logger, State.WAITING)
     var initMessages: MutableList<ReviveMessage> = ArrayList()
     var confirmMessages: MutableList<ReviveMessage> = ArrayList()
@@ -37,71 +25,67 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
         return this.rebalancingAwake
     }
 
-    override suspend fun rebalance(hopCount: Int, maxNOfInvites: Int) {
+    override fun startSubAlgos(hopCount: Int, maxNOfInvites: Int): SimulationInput {
         logger.info("Starting participant discovery before rebalancing")
 
-        this.findParticipants(hopCount, maxNOfInvites)
+        return this.findParticipants(hopCount, maxNOfInvites)
     }
 
-    override suspend fun rebalancingClient() {
-        while (true) {
-            val foundParticipantsResult = resultReadyChannel.receive()
-
-            logger.info("Participant discovery finished with result $foundParticipantsResult, ${result!!.acceptedEdges}")
-
-            if (!foundParticipantsResult) {
-                continue
-            }
-            
-            this.wakeUp()
-
-            if (this.leader !== this) {
-                this.startClient()
-            } else {
-                logger.info("I'm the leader!")
-            }
-
-            rebalancingReadyChannel.receive()
+    override fun rebalance(event: StartStopEvent): SimulationInput {
+        logger.info("Participant discovery finished")
+        if (event.desc.algorithm != Algorithm.ParticipantDisc) {
+            throw IllegalArgumentException("Rebalancing may only be woken up after participant discovery is done!")
         }
-    }
 
-    suspend fun wakeUp(): Boolean {
-        lock.withLock { 
-            if (this.rebalancingAwake) {
-                return true // Already awake
-            }
+        this.initMessageSending()
 
-            logger.debug("I'm waking up!")
+        this.wakeUp()
 
-            this.orderOfStarting = this.result!!.finalParticipants.toList().sorted()
-
-            if (this.orderOfStarting!![0] == this.anonId) {
-                this.leader = this
-            } else {
-                this.leader = g.graph.vertexSet().filter {v -> (v as ReviveNode).anonId == this.orderOfStarting!![0]} .first()
-            }
-
-            this.rebalancingAwake = true
-
-            for (channel in this.result!!.acceptedEdges) {
-                val demand = channel.getDemand(this)
-                logger.debug("Sorting $channel with balance $demand")
-                if (demand < 0) {
-                    outgoingDemandEdges.add(channel)
-                } else {
-                    incomingDemandEdges.add(channel)
-                }
-            }
-
-            return true
+        if (this.leader !== this) {
+            this.startClient()
+        } else {
+            logger.info("I'm the leader!")
         }
+
+        this.stopMessageSending()
+        return Pair(this.sendingList, this.startStopDesc)
     }
 
-    suspend fun startClient () {
+    fun wakeUp(): Boolean {
+        if (this.rebalancingAwake) {
+            return true // Already awake
+        }
+
+        logger.debug("I'm waking up!")
+
+        this.orderOfStarting = this.result!!.finalParticipants.toList().sorted()
+
+        if (this.orderOfStarting!![0] == this.anonId) {
+            this.leader = this
+        } else {
+            this.leader = g.graph.vertexSet().filter {v -> (v as ReviveNode).anonId == this.orderOfStarting!![0]} .first()
+        }
+
+        this.rebalancingAwake = true
+
+        for (channel in this.result!!.acceptedEdges) {
+            val demand = channel.getDemand(this)
+            logger.debug("Sorting $channel with balance $demand")
+            if (demand < 0) {
+                outgoingDemandEdges.add(channel)
+            } else {
+                incomingDemandEdges.add(channel)
+            }
+        }
+
+        return true
+    }
+
+    fun startClient () {
         sendMessage(ReviveMessage(MessageTypes.INIT_REV, this, this.leader!!, this.executionId!!), true)
     }
 
-    suspend fun checkMessage(mes: ReviveMessage, client: Boolean): Boolean {
+    fun checkMessage(mes: ReviveMessage, client: Boolean): Boolean {
         if (this.executionId == null || this.executionId != mes.executionId || !this.rebalancingAwake) {
             sendMessage(ReviveMessage(MessageTypes.FAIL_REV, this, mes.sender, this.executionId!!), true)
             return false
@@ -117,7 +101,7 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
     }
 
 
-    override suspend fun sortMessage (message: Message) {
+    override fun sortMessage (message: Message) {
         when (message.type) {
             MessageTypes.INIT_REV -> handleInitPartMessage(message as ReviveMessage)
             MessageTypes.CONFIRM_REQ_REV -> handleConfirmReqMessage(message as ReviveMessage)
@@ -132,7 +116,7 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
 
     
 
-    suspend fun handleInitPartMessage (message: ReviveMessage) {
+    fun handleInitPartMessage (message: ReviveMessage) {
         if (this.executionId == message.executionId && !this.rebalancingAwake) {
             sendMessage(message)
             return
@@ -155,7 +139,7 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
         }
     }
 
-    suspend fun handleConfirmReqMessage (message: ReviveMessage) {
+    fun handleConfirmReqMessage (message: ReviveMessage) {
         assert(this.leader !== this)
         if (!this.checkMessage(message, true)) { return }
 
@@ -165,7 +149,7 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
         }
     }
 
-    suspend fun handleConfirmDenyMessage (message: ReviveMessage) {
+    fun handleConfirmDenyMessage (message: ReviveMessage) {
         assert(this.leader === this)
         if (!this.checkMessage(message, false)) { return }
 
@@ -187,7 +171,7 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
         }
     }
 
-    suspend fun handleRoundConfirmMessage (message: StartRoundMessage) {
+    fun handleRoundConfirmMessage (message: StartRoundMessage) {
         assert(this.leader !== this)
         if (!this.checkMessage(message, true)) { return }
         
@@ -205,7 +189,7 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
         }
     }
 
-    suspend fun handleDemandMessage (message: DemandMessage) {
+    fun handleDemandMessage (message: DemandMessage) {
         assert(this.leader === this)
         if (!this.checkMessage(message, false)) { return }
 
@@ -220,7 +204,7 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
         }
     }
 
-    suspend fun generateTxSet (messages: List<DemandMessage>) {
+    fun generateTxSet (messages: List<DemandMessage>) {
         val allChannels = messages.map { m -> m.channelsToRebalance }.reduce {accSet, channelSet -> accSet.union(channelSet)}.toList()
         val allNodes = messages.map { m -> m.sender }
         

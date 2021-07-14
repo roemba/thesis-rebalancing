@@ -7,8 +7,8 @@ import roemer.revive.LpSolveDemo
 fun main(args: Array<String>) {
     println("Program has started")
 
-    val graph = GraphHolder("difficult_graph.txt", RebalancerTypes.CoinWasher)
+    val graph = GraphHolder("difficult_graph.txt", NodeTypes.CoinWasher)
     //val graph = GraphHolder("nodes_05-05-2021.json", "channels_05-05-2021.json", RebalancerTypes.CoinWasher)
-    graph.start()
+    graph.start(10, 20)
     // LpSolveDemo().demo()
 }

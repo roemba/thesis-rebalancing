@@ -37,7 +37,7 @@ class Logger(val vertex: Node) {
         val color = colors[vertex.id % colors.size]
 
         if (l >= logLevel) {
-            if (true || vertex.id in arrayOf(1975, 2769)) {
+            if (true || vertex.id in arrayOf(1893, 4098)) { // 3150
                 println("$color$l: $vertex - $s $ANSI_RESET")
             }
         }
