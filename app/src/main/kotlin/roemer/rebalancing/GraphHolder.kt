@@ -111,7 +111,7 @@ class GraphHolder {
             } else {
                 val event = eventQueue.remove()
                 now = event.time
-                println("--- time is $now ---")
+                Logger.time = now
 
                 if (event is MessageEvent) {
                     simulInput = event.message.recipient.receiveMessage(event.message)
@@ -213,12 +213,17 @@ class GraphHolder {
 
     private fun calculateScore() {
         var score = 0
+        var printing = true
         println("Rebalancing success:")
+        if (g.getChannelSet().size > 20) {
+            printing = false
+        }
+
         for (channel in g.getChannelSet()) {
             val oldDemand = channelDemands.get(channel)!!
             val channelScore = oldDemand - channel.getCurrentDemand(null)
             assert(channelScore >= 0)
-            println("$channelScore/$oldDemand -> $channel")
+            if (printing) println("$channelScore/$oldDemand -> $channel")
             score += channelScore
         }
         println("Total score: $score")
@@ -226,6 +231,11 @@ class GraphHolder {
 
     private fun printChannelBalances() {
         println("Channel balances:")
+        if (g.getChannelSet().size > 20) {
+            println("Too many channels to print!")
+            return
+        }
+
         for (channel in g.getChannelSet()) {
             println("$channel, Ongoing=${channel.hasOngoingTx()}, demand=${channel.getCurrentDemand(null)}")
         }

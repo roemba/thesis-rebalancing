@@ -39,8 +39,8 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
 
         this.awake = true
         this.started = true
-        executionId = Tag.createTag()
-        anonId = Tag.createTag()
+        executionId = Tag.createTag(this)
+        anonId = Tag.createTag(this)
         participants.add(anonId!!)
 
         logger.info("Starting to find participants with execution id: $executionId and participant id: $anonId")
@@ -76,7 +76,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         // If not already claimed or finished, become claimed
         if (executionId == null && result == null) {
             executionId = mes.executionId
-            anonId = Tag.createTag()
+            anonId = Tag.createTag(this)
             participants.add(anonId!!)
             parentEdge = mes.channel
             logger.info("Claimed by execution id: $executionId using participant id: $anonId, parentEdge: $parentEdge")

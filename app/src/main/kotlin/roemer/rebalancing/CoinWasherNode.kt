@@ -94,7 +94,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     override fun rebalance(event: StartStopEvent): SimulationInput {
         logger.info("Participant discovery finished with result ") //$foundParticipantsResult, ${result!!.acceptedEdges}")
         if (event.desc.algorithm != Algorithm.ParticipantDisc) {
-            throw IllegalArgumentException("Rebalancing may only be woken up after participant discovery is done!")
+            throw IllegalArgumentException("$this - Rebalancing may only be woken up after participant discovery is done!")
         }
 
         this.initMessageSending()
@@ -115,7 +115,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
         roundStateMachine.state = RoundState.REQ
         for (channel in outgoingDemandEdges) {
-            val channelAnonId = Tag.createTag()
+            val channelAnonId = Tag.createTag(this)
             anonIdChannelMap.put(channelAnonId, channel)
             val seenSet = receivedReqTags.plus(channelAnonId)
 
@@ -179,8 +179,12 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
             // TODO: Possible improvement: remove channelAnonId from anonIdChannelMap after detecting a cycle? Not sure if this is necessary
             receivedRequests.removeIf{m -> m.channel == mes.channel} // Make sure that no requests are in receivedRequests if we find the cycle
+            if (!this.iStartedRound() && receivedRequests.isEmpty()) {
+                logger.error("Received request is never allowed to be empty after checking for cycles if not round starter!")
+                throw IllegalStateException("$this - Received request is never allowed to be empty after checking for cycles if not round starter!")
+            }
 
-            val cycleTag = Tag.createTag()
+            val cycleTag = Tag.createTag(this)
             val channelDemand = mes.channel.getDemand(null)
             cycleChannelPairsMap.put(cycleTag, CycleChannelPair(mes.channel, anonIdChannelMap.get(channelAnonId)!!, channelDemand, false))
             sentSuccessChannel.add(mes.channel)
@@ -229,7 +233,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         if (roundStateMachine.isInState(RoundState.WAIT)) {
             roundStateMachine.state = RoundState.REQ
             for (channel in outgoingDemandEdges) {
-                val channelAnonId = Tag.createTag()
+                val channelAnonId = Tag.createTag(this)
                 anonIdChannelMap.put(channelAnonId, channel)
                 receivedReqTags.addAll(mes.seenSet)
                 val seenSet = receivedReqTags.plus(channelAnonId)
@@ -238,21 +242,8 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                 nOfOutstandingRequests++
             }
         } else if (roundStateMachine.isInState(RoundState.REQ)) {
-            if (this.checkForCycles(mes, mes.seenSet)) {
+            if (!this.processRequestOrUpdateMessage(mes)) {
                 return
-            }
-            
-            val newSeenSetEntries = mes.seenSet.subtract(receivedReqTags)
-            if (newSeenSetEntries.isNotEmpty()) {
-                receivedReqTags.addAll(mes.seenSet)
-                logger.debug("Request got new tags, sending update messages with new tags $newSeenSetEntries")
-
-                var receivedSuccessChannels = receivedSuccesses.map{i -> i.channel}.toHashSet()
-                for (channel in outgoingDemandEdges) {
-                    if (!(channel in receivedSuccessChannels)) {
-                        sendMessage(UpdateRebalancingMessage(MessageTypes.UPDATE_R, this, channel.getOppositeNode(this), channel, mes.startId, mes.executionId, newSeenSetEntries))
-                    }
-                }
             }
         } else {
             return sendMessage(FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.NO_SUCCESS, mes.startId, this.executionId))
@@ -264,6 +255,35 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         if (nOfOutstandingRequests == 0) {
             replyToRequests()
         }
+    }
+
+    fun processRequestOrUpdateMessage(mes: RequestRebalancingMessage): Boolean {
+        if (this.checkForCycles(mes, mes.seenSet)) {
+            return false
+        }
+
+        if (this.iStartedRound()) {
+            throw IllegalStateException("$this - A round starter should never send update messages!")
+        }
+
+        var topic = "Request"
+        if (mes is UpdateRebalancingMessage) {
+            topic = "Update"
+        }
+        
+        val newSeenSetEntries = mes.seenSet.subtract(receivedReqTags)
+        if (newSeenSetEntries.isNotEmpty()) {
+            receivedReqTags.addAll(mes.seenSet)
+            logger.debug("$topic got new tags, sending update messages with new tags $newSeenSetEntries")
+
+            var receivedSuccessChannels = receivedSuccesses.map{i -> i.channel}.toHashSet()
+            for (channel in outgoingDemandEdges) {
+                if (!(channel in receivedSuccessChannels)) {
+                    sendMessage(UpdateRebalancingMessage(MessageTypes.UPDATE_R, this, channel.getOppositeNode(this), channel, mes.startId, mes.executionId, newSeenSetEntries))
+                }
+            }
+        }
+        return true
     }
 
     fun handleUpdateMessage(mes: UpdateRebalancingMessage) {
@@ -282,20 +302,8 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             return
         }
 
-        val newSeenSetEntries = mes.seenSet.subtract(receivedReqTags)
-
-        if (newSeenSetEntries.isNotEmpty()) {
-            receivedReqTags.addAll(newSeenSetEntries)
-
-            if (this.checkForCycles(mes, newSeenSetEntries)) {
-                logger.debug("Found cycle based on update message")
-                return
-            }
-
-            logger.debug("Received update message with new tags, sending update messages with new tags $newSeenSetEntries")
-            for (channel in outgoingDemandEdges) {
-                sendMessage(UpdateRebalancingMessage(MessageTypes.UPDATE_R, this, channel.getOppositeNode(this), channel, mes.startId, mes.executionId, newSeenSetEntries))
-            }
+        if (!this.processRequestOrUpdateMessage(mes)) {
+            return
         }
     }
 
@@ -304,7 +312,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         if (checkValue != null) { return sendMessage(checkValue) }
 
         if (mes.channel in channelSuccessMessage) {
-            throw Error("Already gotten success message this round from channel ${mes.channel}!")
+            throw IllegalStateException("$this - Already gotten success message this round from channel ${mes.channel}!")
         } else {
             channelSuccessMessage.add(mes.channel)
         }
@@ -411,7 +419,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                 
                 logger.debug("Source: Requesting tx on ${entry.key}")
                 if (!entry.value.startChannel.requestTx(tx, htlc, true)) {
-                    throw Error("Channel did not allow me to request TX!")
+                    throw IllegalStateException("$this - Channel did not allow me to request TX!")
                 }
 
                 pairs.second.put(entry.key, tx)
@@ -441,7 +449,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         roundMessageHistory.add(mes)
 
         if (mes.channel in channelCommitMessage) {
-            throw Error("Already received commit message on ${mes.channel}")
+            throw IllegalStateException("$this - Already received commit message on ${mes.channel}")
         } else {
             channelCommitMessage.add(mes.channel)
         }
@@ -495,7 +503,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                                 val tx = Transaction(UUID.randomUUID(), pair.demand, this, channel.getOppositeNode(this))
                                 logger.debug("Requesting tx on ${pair.tag}")
                                 if (!channel.requestTx(tx, pair.htlc, true)) {
-                                    throw Error("Channel did not allow me to request TX!")
+                                    throw IllegalStateException("$this - Channel did not allow me to request TX!")
                                 }
                                 tagTxMap.put(pair.tag, tx)
                             }
@@ -572,7 +580,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             sendMessage(mes) // Add message to back of queue to try again later
             return
         } else if (!roundStateMachine.isInState(RoundState.EXEC)) {
-            throw Error("Received a executing message before COM state!")
+            throw IllegalStateException("$this - Received a executing message before COM state!")
         }
 
         roundMessageHistory.add(mes)
@@ -582,7 +590,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                 logger.debug("Received execution message back for own cycle ${mes.tag}, skipping...")
                 return
             } else {
-                throw IllegalStateException("Tag ${mes.tag} not found in tagTransactionMap while executing")
+                throw IllegalStateException("$this - Tag ${mes.tag} not found in tagTransactionMap while executing")
             }
         }
 

@@ -53,7 +53,7 @@ open class Node(val id: Int, val g: ChannelNetwork) {
             message is ParticipantMessage ||
             message is RebalancingMessage || message is FailRebalancingMessage ||
             message is ReviveMessage
-        )
+        ) // && message.type != MessageTypes.UPDATE_R
 
     }
 

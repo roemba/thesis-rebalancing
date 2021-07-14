@@ -4,9 +4,11 @@ import java.util.UUID
 
 class Tag: Comparable<Tag> {
     val id: UUID
+    val creator: Node
 
-    private constructor(id: UUID) {
+    private constructor(id: UUID, creator: Node) {
         this.id = id
+        this.creator = creator
     }
 
     override operator fun compareTo(other: Tag): Int {
@@ -14,13 +16,13 @@ class Tag: Comparable<Tag> {
     }
 
     companion object {
-        fun createTag(): Tag {
-            return Tag(SeededRandom.getRandomUUID()) // Int = SeededRandom.getRandomInt() // 
+        fun createTag(vertex: Node): Tag {
+            return Tag(SeededRandom.getRandomUUID(), vertex) // Int = SeededRandom.getRandomInt() // 
         }
     }
 
     override fun toString(): String {
-        return "Tag(id=$id)"
+        return "Tag(creat=$creator, id=$id)"
     }
 
     override fun equals(other: Any?): Boolean {

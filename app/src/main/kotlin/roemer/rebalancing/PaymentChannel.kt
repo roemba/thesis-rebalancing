@@ -71,7 +71,7 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
         if (htlc != null) {
             htlcTransactions.put(tx, htlc)
         }
-        println("Gave commit for $tx on $this")
+        // println("Gave commit for $tx on $this")
         return true
     }
 
@@ -95,7 +95,7 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
 
         assert(this.totalFunds == this.balance1 + this.balance2)
 
-        println("Executing $tx on $this")
+        // println("Executing $tx on $this")
         return true
     }
 
