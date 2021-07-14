@@ -12,7 +12,7 @@ abstract class Event (
     override fun compareTo (other: Event): Int {
         val res = this.time.compareTo(other.time)
         if (res == 0) {
-            println("CONFLICT --${this.id}-${other.id}-----------------------------------")
+            println("TIME CONFLICT - ${this.id}-${other.id}")
             return this.id.compareTo(other.id)
         }
         return res

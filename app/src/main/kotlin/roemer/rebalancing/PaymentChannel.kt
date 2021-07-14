@@ -153,6 +153,15 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
         return diff
     }
 
+    fun getBalance(vertex: Node): Int {
+        if (!this.isChannelNode(vertex)) {
+            throw IllegalArgumentException("The given node does not belong to this channel!")
+        }
+
+        if (vertex === this.node1) {return this.balance1}
+        return this.balance2
+    }
+
     @Throws(IllegalStateException::class)
     fun lock() {
         if (this.locked) {

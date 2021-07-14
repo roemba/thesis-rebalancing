@@ -273,12 +273,12 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         roundMessageHistory.add(mes)
 
         if (!roundStateMachine.isInState(RoundState.REQ)) {
-            // logger.debug("Ignoring update because already in another roundState")
+            logger.debug("Ignoring update because already in another roundState")
             return
         }
 
         if (mes.channel in sentSuccessChannel) {
-            logger.debug("Already sent a SUCCESS, therefore ignoring UPDATE")
+            logger.debug("Already sent a SUCCESS over this channel, therefore ignoring UPDATE")
             return
         }
 
@@ -317,6 +317,8 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
             if (nOfOutstandingRequests == 0) {
                 replyToRequests()
+            } else {
+                logger.debug("Waiting for $nOfOutstandingRequests more success responses")
             }
         }
     }
@@ -466,7 +468,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                     }
                 }
                 for (entry in cycleChannelPairsMap.entries) {
-                    if (!entry.value.completed) {
+                    if (!entry.value.completed) { // Do not give commit for an owned cycle if the cycle tag hasn't made it all the way back to the owner
                         logger.debug("Cycle ${entry.key} not complete, skipping...")
                         nOfIgnoredCycles++
                         continue
@@ -482,6 +484,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
                     val pairs = K.getOrPut(entry.value.startChannel, { ArrayList() })
                     pairs.add(TagDemandHTLCPair(entry.key, entry.value.demand, htlc))
+                    logger.debug("Added cycle with tag ${entry.key} to outgoing commits")
                 }
 
                 for (channel in outgoingDemandEdges) {
@@ -507,7 +510,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             receivedCycleCommits.add(mes)
         }
 
-        if (receivedCommits.size + receivedCycleCommits.size + nOfIgnoredCycles == receivedRequests.size + cycleChannelPairsMap.size) {
+        if (receivedCommits.size + receivedCycleCommits.size == receivedRequests.size + cycleChannelPairsMap.size) {
             logger.info("Received all commits from requesting and cycle channels")
 
             // Store which transaction belongs to which channel and tag, but only for commits from sources other than owned cycles
@@ -546,7 +549,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                     nextRound()
                 }
             } else {
-                logger.debug("Still waiting for ${tagTransactionMap.keys}")
+                logger.debug("Still waiting for execution messages for ${tagTransactionMap.keys}")
             }
         } else {
             logger.debug("#ofReceivedCommits: ${receivedCommits.size} #ofReceivedCycleCommits: ${receivedCycleCommits.size} #ofIgnoredCycles: $nOfIgnoredCycles #ofReceivedRequests: ${receivedRequests.size} #ofCycleChannelPairsMap ${cycleChannelPairsMap.size}")
@@ -575,8 +578,12 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         roundMessageHistory.add(mes)
 
         if (!(mes.tag in tagTransactionMap)) {
-            logger.debug("Tag ${mes.tag} not found in tagTransactionMap while executing")
-            return
+            if (mes.tag in cycleChannelPairsMap) {
+                logger.debug("Received execution message back for own cycle ${mes.tag}, skipping...")
+                return
+            } else {
+                throw IllegalStateException("Tag ${mes.tag} not found in tagTransactionMap while executing")
+            }
         }
 
         val entryValue = tagTransactionMap.get(mes.tag)!!
@@ -675,11 +682,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         // Unlock all incoming edges for normal txs, as those can only be executed by current node
         for (channel in incomingDemandEdges) {
             if (!channel.hasOngoingTx()) {
-                channel.unlock()    
-            channel.unlock()    
-                channel.unlock()    
-            channel.unlock()    
-                channel.unlock()    
+                channel.unlock()     
             }
         }
 

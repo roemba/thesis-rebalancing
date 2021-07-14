@@ -30,7 +30,8 @@ class GraphHolder {
     val g: ChannelNetwork
     val nodes: List<Node>
     val nodeType: NodeTypes
-    val channelBalances: MutableMap<PaymentChannel, Int> = HashMap()
+    val channelBalances: MutableMap<Pair<Node, PaymentChannel>, Int> = HashMap()
+    val channelDemands: MutableMap<PaymentChannel, Int> = HashMap()
 
     constructor (g: ChannelNetwork, nodes: List<Node>, nodeType: NodeTypes) {
         this.g = g
@@ -87,7 +88,11 @@ class GraphHolder {
         return SeededRandom.random.nextLong(1L, 100L)
     }
 
-    fun start () {
+    fun start (hopCount: Int, maxNumberOfInvites: Int) {
+        // Statistics and logging
+        saveChannelBalances()
+
+        // Discrete event simulation
         var now = 0L
         val eventQueue: Queue<Event> = PriorityQueue()
         var started = false
@@ -95,16 +100,14 @@ class GraphHolder {
 
         while (!started || eventQueue.isNotEmpty()) {
             var simulInput: SimulationInput = Pair(ArrayList(), null)
-            var currentSender: Node? = null
             if (!started) {
                 val startNode = nodes[0]
                 when (this.nodeType) {
-                    NodeTypes.CoinWasher, NodeTypes.Revive -> simulInput = (startNode as Rebalancer).startSubAlgos(3, 20)
-                    NodeTypes.ParticipantDisc -> simulInput = (startNode as ParticipantNodeAlt).findParticipants(3, 20)
+                    NodeTypes.CoinWasher, NodeTypes.Revive -> simulInput = (startNode as Rebalancer).startSubAlgos(hopCount, maxNumberOfInvites)
+                    NodeTypes.ParticipantDisc -> simulInput = (startNode as ParticipantNodeAlt).findParticipants(hopCount, maxNumberOfInvites)
                 }     
 
                 started = true
-                currentSender = startNode
             } else {
                 val event = eventQueue.remove()
                 now = event.time
@@ -112,7 +115,6 @@ class GraphHolder {
 
                 if (event is MessageEvent) {
                     simulInput = event.message.recipient.receiveMessage(event.message)
-                    currentSender = event.message.recipient
                 } else if (event is StartStopEvent) {
                     if (event.desc.recipient != null && !event.desc.start && event.desc.algorithm == Algorithm.ParticipantDisc) {
                         when (this.nodeType) {
@@ -141,98 +143,71 @@ class GraphHolder {
             }
 
             if (simulInput.second != null) {
-                // Ensure start stop events always happen after all messages have been send and received
                 eventQueue.add(StartStopEvent(now + 1, simulInput.second!!))
             }
         }
 
+        // Statistic and logging
+        checkConservationOfCoins()
+        calculateScore()
+        var nOfParticipantAwake = 0
+        var nOfRebalancingAwake = 0
+        var totalNumberOfTransactionMessages = 0
+        var totalNumberOfParticipantMessages = 0
+        var totalNumberOfRebalancingMessages = 0
+        for (i in 0 until nodes.size) {
+            val node = nodes[i] as ParticipantNodeAlt
+            totalNumberOfTransactionMessages += node.numberOfTransactionMessages
+            totalNumberOfParticipantMessages += node.numberOfParticipantMessages
+            totalNumberOfRebalancingMessages += node.numberOfRebalancingMessages
+            
+            if (node.awake) {
+                println("$node is still doing part discovery")
+                nOfParticipantAwake++
+            }
+
+            if (nodes[i] is Rebalancer) {
+                val t = nodes[i] as Rebalancer
+                if (t.isRebalancingAwake()) {
+                    println("$node is still rebalancing")
+                    nOfRebalancingAwake++
+                }
+            }
+        }
+        println("Awake participant nodes: $nOfParticipantAwake")
+        println("Awake rebalancing nodes: $nOfRebalancingAwake")
+        println("Total # of tx messages: $totalNumberOfTransactionMessages")
+        println("Total # of participant messages: $totalNumberOfParticipantMessages")
+        println("Total # of rebalancing messages: $totalNumberOfRebalancingMessages")
+        println("Total # of messages: ${totalNumberOfTransactionMessages + totalNumberOfParticipantMessages + totalNumberOfRebalancingMessages}")
+
+        printChannelBalances()
+
         println("Program has finished")
-        // runBlocking {
-        //     saveChannelBalances()
-
-        //     for (node in nodes) {
-        //         launch { node.receiveMessage() }
-        //         val reb = node as Rebalancer
-        //         launch { reb.rebalancingClient() }
-        //     }
-        //     println("Continued while nodes are waiting")
-        //     println("Rebalancer type $rebalancerType")
-
-        //     val startNode = nodes[0] as Rebalancer
-        //     startNode.rebalance(3, 20)
-        //     // println(nodes[0].splitEqually(112, intArrayOf(10, 30, 20, 3, 50)).contentToString())
-        //     // nodes[4].startFindingParticipants(20)
-
-        //     // try {
-        //     //     nodes[4]!!.startPayment(2, nodes[1]!!)
-        //     // } catch (e: TransactionAbortedException) {
-        //     //     println(e)
-        //     // }
-            
-        //     // outerLoop@ while (true) {
-        //     //     println("Still running, will check in 5s...")
-        //     //     var nOfAwake = 0
-        //     //     val seenPartSizes: MutableSet<Int> = HashSet() 
-        //     //     for (i in 0 until nodes.size) {
-        //     //         if (nodes[i].awake) {
-        //     //             nOfAwake++
-        //     //         }
-        //     //         if (nodes[i].overalSuccess) {
-        //     //             seenPartSizes.add(nodes[i].finalParticipants!!.size)
-        //     //         }
-        //     //     }
-        //     //     println("Awake nodes: $nOfAwake")
-        //     //     for (i in seenPartSizes) {
-        //     //         println("Seen: $i")
-        //     //     }
-        //     //     delay(5000)
-        //     //     // for (i in 0 until nodes.size) {
-        //     //     //     if (!nodes[i].messageChannel.isEmpty) {
-        //     //     //         continue@outerLoop
-        //     //     //     }
-        //     //     // }
-        //     //     // break
-        //     // }
-
-        //     delay(120 * 1000)
-        //     println()
-            
-        //     // printChannelBalances()
-        //     calculateScore()
-        //     var nOfParticipantAwake = 0
-        //     var nOfRebalancingAwake = 0
-        //     var totalNumberOfTransactionMessages = 0
-        //     var totalNumberOfParticipantMessages = 0
-        //     var totalNumberOfRebalancingMessages = 0
-        //     for (i in 0 until nodes.size) {
-        //         val node = nodes[i] as ParticipantNodeAlt
-        //         totalNumberOfTransactionMessages += node.numberOfTransactionMessages
-        //         totalNumberOfParticipantMessages += node.numberOfParticipantMessages
-        //         totalNumberOfRebalancingMessages += node.numberOfRebalancingMessages
-
-        //         if (node.awake) {
-        //             println(node)
-        //             nOfParticipantAwake++
-        //         }
-
-        //         val t = nodes[i] as Rebalancer
-        //         if (t.isRebalancingAwake()) {
-        //             println(node)
-        //             nOfRebalancingAwake++
-        //         }
-        //     }
-        //     println("Awake participant nodes: $nOfParticipantAwake")
-        //     println("Awake rebalancing nodes: $nOfRebalancingAwake")
-        //     println("Total # of tx messages: $totalNumberOfTransactionMessages")
-        //     println("Total # of participant messages: $totalNumberOfParticipantMessages")
-        //     println("Total # of rebalancing messages: $totalNumberOfRebalancingMessages")
-        //     println("Total # of messages: ${totalNumberOfTransactionMessages + totalNumberOfParticipantMessages + totalNumberOfRebalancingMessages}")
-        // }
     }
 
     private fun saveChannelBalances() {
-        for (channel in g.getChannelSet()) {
-            channelBalances.put(channel, channel.getCurrentDemand(null))
+        for (node in this.nodes) {
+            val channels = g.getChannelsFor(node)
+            for (channel in channels) {
+                channelDemands.put(channel, channel.getCurrentDemand(null))
+                channelBalances.put(Pair(node, channel), channel.getBalance(node))
+            }
+        }
+    }
+
+    private fun checkConservationOfCoins() {
+        for (node in this.nodes) {
+            val channels = g.getChannelsFor(node)
+            var oldSum = 0
+            var newSum = 0
+
+            for (channel in channels) {
+                oldSum += channelBalances.get(Pair(node, channel))!!
+                newSum += channel.getBalance(node)
+            }
+
+            assert(oldSum == newSum)
         }
     }
 
@@ -240,10 +215,10 @@ class GraphHolder {
         var score = 0
         println("Rebalancing success:")
         for (channel in g.getChannelSet()) {
-            val oldDemand = channelBalances.get(channel)!!
+            val oldDemand = channelDemands.get(channel)!!
             val channelScore = oldDemand - channel.getCurrentDemand(null)
             assert(channelScore >= 0)
-            // println("$channelScore/$oldDemand -> $channel")
+            println("$channelScore/$oldDemand -> $channel")
             score += channelScore
         }
         println("Total score: $score")
