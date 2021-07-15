@@ -46,7 +46,7 @@ class Logger(val vertex: Node) {
                 round = "-R:${vertex.roundIndex}"
             }
 
-            if (true || vertex.id in arrayOf(8296) && vertex is CoinWasherNode) { // 3150
+            if (vertex.id in arrayOf(5953) && vertex is CoinWasherNode)  { // 3150
                 println("$color${Logger.time}-$l$round: $vertex - $s $ANSI_RESET")
             }
         }

@@ -16,13 +16,17 @@ class Tag: Comparable<Tag> {
     }
 
     companion object {
-        fun createTag(vertex: Node): Tag {
-            return Tag(SeededRandom.getRandomUUID(), vertex) // Int = SeededRandom.getRandomInt() // 
+        fun createTag(creator: Node): Tag {
+            return Tag(SeededRandom.getRandomUUID(), creator) // Int = SeededRandom.getRandomInt() // 
         }
     }
 
     override fun toString(): String {
-        return "Tag(creat=$creator, id=$id)"
+        if (true || creator.id in arrayOf(2520, 5419)) {
+            return "Tag(creat=$creator, id=$id)"
+        } else {
+            return ""
+        }
     }
 
     override fun equals(other: Any?): Boolean {

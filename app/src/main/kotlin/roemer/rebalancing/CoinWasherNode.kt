@@ -192,6 +192,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     fun disallowIfFromDifferentRound(mes: RebalancingMessage): Message? {
         if (this.getRoundStarter() != mes.startId) {
             logger.error("Received message from a different round while not allowed!")
+            throw IllegalStateException("Message $this received from different round while not allowed!")
             return FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_ROUND, mes.startId, this.executionId)
         }
         return null
@@ -318,7 +319,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
     fun handleUpdateMessage(mes: UpdateRebalancingMessage) {
         // --- START checks
-        val checks = arrayOf(this::disallowIncorrectExecutionId, this::disallowIfNotRebalancingAwake, this::disallowIfFromDifferentRound)
+        val checks = arrayOf(this::disallowIncorrectExecutionId, this::disallowIfNotRebalancingAwake, this::deferProcessingIfFromFutureRound, this::disallowIfFromEarlierRound)
         val checksRes = this.runMultipleMessageCheckingFunc(mes, checks)
         if (checksRes != null) {
             return sendMessage(checksRes)
