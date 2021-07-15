@@ -2,6 +2,7 @@ package roemer.rebalancing
 
 import java.util.UUID
 import java.security.MessageDigest
+import kotlin.reflect.KFunction1
 
 enum class RoundState {
     WAIT, REQ, SUC, COM, EXEC
@@ -153,24 +154,66 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         return true
     }
 
-    fun checkMessage(mes: RebalancingMessage, notRequest: Boolean = true): Message? {
-        if (this.executionId == null || this.executionId != mes.executionId) {
-            return FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_EXECUTION_ID, mes.startId, this.executionId)
-        }
-
-        if (notRequest) {
-            if (!this.rebalancingAwake) {
-                return FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.NOT_AWAKE, mes.startId, this.executionId)
-            }
-            if (this.getRoundStarter() != mes.startId) {
-                logger.error("Received non-request from a different round!")
-                return FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_ROUND, mes.startId, this.executionId)
+    // ---------- START Message checking functions -------------
+    fun runMultipleMessageCheckingFunc(m: RebalancingMessage, functions: Array<KFunction1<RebalancingMessage, Message?>>): Message? {
+        for (func in functions) {
+            val res = func(m)
+            if (res != null) {
+                return res
             }
         }
-
         return null
     }
 
+    fun disallowIncorrectExecutionId(mes: RebalancingMessage): Message? {
+        if (this.executionId == null || this.executionId != mes.executionId) {
+            logger.error("Received message with incorrect execution id!")
+            return FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_EXECUTION_ID, mes.startId, this.executionId)
+        }
+        return null
+    }
+
+    fun disallowIfNotRebalancingAwake(mes: RebalancingMessage): Message? {
+        if (!this.rebalancingAwake) {
+            logger.error("Received message while not rebalancing awake!")
+            return FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.NOT_AWAKE, mes.startId, this.executionId)
+        }
+        return null
+    }
+
+    fun disallowIfFromEarlierRound(mes: RebalancingMessage): Message? {
+        if (this.orderOfStarting!!.indexOf(mes.startId) < this.roundIndex) {
+            logger.warn("Received message from earlier round")
+            return FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_ROUND, mes.startId, this.executionId)
+        }
+        return null
+    }
+
+    fun disallowIfFromDifferentRound(mes: RebalancingMessage): Message? {
+        if (this.getRoundStarter() != mes.startId) {
+            logger.error("Received message from a different round while not allowed!")
+            return FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_ROUND, mes.startId, this.executionId)
+        }
+        return null
+    }
+
+    fun deferProcessingIfNotFinishedWithPartDisc(mes: RebalancingMessage): Message? {
+        if (this.executionId != null && this.result == null) {
+            logger.warn("Not finished with part. discovery!")
+            return mes // Add message to back of queue to try again later
+        }
+        return null
+    }
+
+    fun deferProcessingIfFromFutureRound(mes: RebalancingMessage): Message? {
+        if (this.orderOfStarting!!.indexOf(mes.startId) > this.roundIndex) {
+            logger.warn("Message is for future round!")
+            return mes // Add message to back of queue to try again later
+        }
+        return null
+    }
+
+    // ---------- END Message checking functions -------------
 
     fun checkForCycles(mes: RequestRebalancingMessage, seenSetToCheck: Set<Tag>): Boolean {
         val intersect = anonIdChannelMap.keys.intersect(seenSetToCheck)
@@ -198,35 +241,22 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         return false
     }
 
-    fun checkSleepyMessages(mes: RebalancingMessage): Message? {
-        if (this.executionId != null && this.result == null) { // Participant discovery has started but is not finished
-            logger.warn("Not finished with part. discovery!")
-            return mes // Add message to back of queue to try again later
-        }
-
-        val checkValue = this.checkMessage(mes, false)
-        if (checkValue != null) {
-            return checkValue
+    fun handleRequestMessage(mes: RequestRebalancingMessage) {
+        // --- START checks
+        val checkBeforeWaking = arrayOf(this::deferProcessingIfNotFinishedWithPartDisc, this::disallowIncorrectExecutionId)
+        val checkBeforeWakeRes = this.runMultipleMessageCheckingFunc(mes, checkBeforeWaking)
+        if (checkBeforeWakeRes != null) {
+            return sendMessage(checkBeforeWakeRes)
         }
 
         this.wakeUp()
 
-        if (this.orderOfStarting!!.indexOf(mes.startId) > this.roundIndex) { // If the message received is from a later round, put it back in the queue
-            logger.warn("Message is for future round!")
-            return mes // Add message to back of queue to try again later
-        } else if (this.orderOfStarting!!.indexOf(mes.startId) < this.roundIndex) { // If the message is from an earlier round, deny straight away
-            logger.warn("Received message $mes from earlier round")
-            return FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_ROUND, mes.startId, this.executionId)
+        val checkAfterWake = arrayOf(this::deferProcessingIfFromFutureRound, this::disallowIfFromEarlierRound)
+        val checkAfterWakeRes = this.runMultipleMessageCheckingFunc(mes, checkAfterWake)
+        if (checkAfterWakeRes != null) {
+            return sendMessage(checkAfterWakeRes)
         }
-
-        return null
-    }
-
-    fun handleRequestMessage(mes: RequestRebalancingMessage) {
-        val checkValue = this.checkSleepyMessages(mes)
-        if (checkValue != null) {
-            return sendMessage(checkValue)
-        }
+        // --- END checks
 
         roundMessageHistory.add(mes)
 
@@ -242,7 +272,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                 nOfOutstandingRequests++
             }
         } else if (roundStateMachine.isInState(RoundState.REQ)) {
-            if (!this.processRequestOrUpdateMessage(mes)) {
+            if (!this.checkForCyclesAndNewTags(mes)) {
                 return
             }
         } else {
@@ -257,7 +287,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
     }
 
-    fun processRequestOrUpdateMessage(mes: RequestRebalancingMessage): Boolean {
+    fun checkForCyclesAndNewTags(mes: RequestRebalancingMessage): Boolean {
         if (this.checkForCycles(mes, mes.seenSet)) {
             return false
         }
@@ -274,7 +304,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         val newSeenSetEntries = mes.seenSet.subtract(receivedReqTags)
         if (newSeenSetEntries.isNotEmpty()) {
             receivedReqTags.addAll(mes.seenSet)
-            logger.debug("$topic got new tags, sending update messages with new tags $newSeenSetEntries")
+            logger.debug("$topic message got new tags, sending update messages with new tags $newSeenSetEntries")
 
             var receivedSuccessChannels = receivedSuccesses.map{i -> i.channel}.toHashSet()
             for (channel in outgoingDemandEdges) {
@@ -287,8 +317,13 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     }
 
     fun handleUpdateMessage(mes: UpdateRebalancingMessage) {
-        val checkValue = this.checkMessage(mes, true)
-        if (checkValue != null) { return sendMessage(checkValue) }
+        // --- START checks
+        val checks = arrayOf(this::disallowIncorrectExecutionId, this::disallowIfNotRebalancingAwake, this::disallowIfFromDifferentRound)
+        val checksRes = this.runMultipleMessageCheckingFunc(mes, checks)
+        if (checksRes != null) {
+            return sendMessage(checksRes)
+        }
+        // --- END checks
 
         roundMessageHistory.add(mes)
 
@@ -302,14 +337,19 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             return
         }
 
-        if (!this.processRequestOrUpdateMessage(mes)) {
+        if (!this.checkForCyclesAndNewTags(mes)) {
             return
         }
     }
 
     fun handleSuccessMessage(mes: SuccessRebalancingMessage) {
-        val checkValue = this.checkMessage(mes, true)
-        if (checkValue != null) { return sendMessage(checkValue) }
+        // --- START checks
+        val checks = arrayOf(this::disallowIncorrectExecutionId, this::disallowIfNotRebalancingAwake, this::disallowIfFromDifferentRound)
+        val checksRes = this.runMultipleMessageCheckingFunc(mes, checks)
+        if (checksRes != null) {
+            return sendMessage(checksRes)
+        }
+        // --- END checks
 
         if (mes.channel in channelSuccessMessage) {
             throw IllegalStateException("$this - Already gotten success message this round from channel ${mes.channel}!")
@@ -443,8 +483,13 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     }
 
     fun handleCommitMessage(mes: CommitRebalancingMessage) {
-        val checkValue = this.checkMessage(mes, true)
-        if (checkValue != null) { return sendMessage(checkValue) }
+        // --- START checks
+        val checks = arrayOf(this::disallowIncorrectExecutionId, this::disallowIfNotRebalancingAwake, this::disallowIfFromDifferentRound)
+        val checksRes = this.runMultipleMessageCheckingFunc(mes, checks)
+        if (checksRes != null) {
+            return sendMessage(checksRes)
+        }
+        // --- END checks
 
         roundMessageHistory.add(mes)
 
@@ -569,12 +614,16 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     }
 
     fun handleExecuteRebalancingMessage(mes: ExecuteRebalancingMessage) {
+        // --- START checks
         if (!rebalancingAwake || mes.startId != getRoundStarter()) {
             return
         }
 
-        val checkValue = this.checkMessage(mes, true)
-        if (checkValue != null) { return sendMessage(checkValue) }
+        val checksRes = this.disallowIncorrectExecutionId(mes)
+        if (checksRes != null) {
+            return sendMessage(checksRes)
+        }
+        // --- END checks
 
         if (roundStateMachine.isInState(RoundState.COM)) {
             sendMessage(mes) // Add message to back of queue to try again later
@@ -617,7 +666,23 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     }
 
     fun handleNextRoundMessage(mes: NextRoundMessage) {
-        if (this.checkSleepyMessages(mes) != null) { return }
+        // --- START checks
+        val checkBeforeWaking = arrayOf(this::deferProcessingIfNotFinishedWithPartDisc, this::disallowIncorrectExecutionId)
+        val checkBeforeWakeRes = this.runMultipleMessageCheckingFunc(mes, checkBeforeWaking)
+        if (checkBeforeWakeRes != null) {
+            return sendMessage(checkBeforeWakeRes)
+        }
+
+        this.wakeUp()
+
+        if (this.disallowIfFromEarlierRound(mes) != null) {
+            return // Filter out FailMessages that relate to incorrect round, as this happens often
+        }
+        val checkAfterWakeRes = this.deferProcessingIfFromFutureRound(mes)
+        if (checkAfterWakeRes != null) {
+            return sendMessage(checkAfterWakeRes)
+        }
+        // --- END checks
 
         roundMessageHistory.add(mes)
 

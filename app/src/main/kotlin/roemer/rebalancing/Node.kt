@@ -21,7 +21,6 @@ open class Node(val id: Int, val g: ChannelNetwork) {
     var sendingList: MutableList<Message> = ArrayList()
     var startStopDesc: StartStopDescription? = null
     var sendingEnabled = false
-    var unprocessedMessagesBuffer: MutableList<Message> = ArrayList()
     var unprocessedMessages: MutableList<Message> = ArrayList()
 
     fun startPayment(amount: Int, receiver: Node) {
@@ -61,7 +60,7 @@ open class Node(val id: Int, val g: ChannelNetwork) {
         if (!sendingEnabled) throw IllegalStateException("Sending message while sending is not enabled!")
 
         if (message.sender != this) {
-            this.unprocessedMessagesBuffer.add(message)
+            this.unprocessedMessages.add(message)
             return
         }
 
@@ -106,15 +105,16 @@ open class Node(val id: Int, val g: ChannelNetwork) {
 
     fun stopMessageSending() {
         // Process any unprocessed messages
+        // logger.debug("S: ${this.unprocessedMessages.size}")
         val copyOfList = this.unprocessedMessages.toMutableList()
         this.unprocessedMessages = ArrayList()
         for (mess in copyOfList) {
             sortMessage(mess)
         }
 
-        // Empty buffer, adding all unprocessed messages from this invocation
-        this.unprocessedMessages.addAll(this.unprocessedMessagesBuffer)
-        this.unprocessedMessagesBuffer = ArrayList()
+        if (copyOfList.size > this.unprocessedMessages.size) {
+            logger.info("Processed ${copyOfList.size - this.unprocessedMessages.size} messages that couldn't be processed before")
+        }
 
         if (this.unprocessedMessages.isNotEmpty()) {
             logger.info("${this.unprocessedMessages.size} unprocessed message(s)")
