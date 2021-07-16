@@ -7,7 +7,7 @@ import kotlinx.coroutines.sync.withLock
 
 class SeededRandom {
     companion object {
-        val random = Random(324)
+        val random = Random(42)
         var counter = 0L
         val uuidStore: MutableSet<UUID> = HashSet()
 
