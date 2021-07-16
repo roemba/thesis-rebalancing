@@ -222,7 +222,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         if (intersect.isNotEmpty()) {
             val channelAnonId = intersect.first() // We only care about one match
 
-            // TODO: Possible improvement: remove channelAnonId from anonIdChannelMap after detecting a cycle? Not sure if this is necessary
             receivedRequests.removeIf{m -> m.channel == mes.channel} // Make sure that no requests are in receivedRequests if we find the cycle
             if (!this.iStartedRound() && receivedRequests.isEmpty()) {
                 logger.error("Received request is never allowed to be empty after checking for cycles if not round starter!")
