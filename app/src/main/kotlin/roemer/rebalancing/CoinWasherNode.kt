@@ -60,6 +60,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     var nOfIgnoredCycles = 0
     var forwardedNextRoundMessage = false
     var safe = false
+    var failedChannels: MutableSet<PaymentChannel> = HashSet()
     
     // Need to be reset on class creation
     val digest = MessageDigest.getInstance("SHA-256");
@@ -110,7 +111,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         logger.info("$anonId is starting round $roundIndex!")
 
         // If round starter has no outgoing edges, move directly to next round
-        if (outgoingDemandEdges.size == 0) {
+        if (outgoingDemandEdges.isEmpty()) {
             return nextRound()
         }
 
@@ -261,6 +262,11 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
         roundMessageHistory.add(mes)
 
+        // Case when node has no outgoing edges
+        if (outgoingDemandEdges.isEmpty()) {
+            return sendMessage(FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.NO_SUCCESS, mes.startId, this.executionId))
+        }
+
         if (roundStateMachine.isInState(RoundState.WAIT)) {
             roundStateMachine.state = RoundState.REQ
             for (channel in outgoingDemandEdges) {
@@ -281,11 +287,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
 
         receivedRequests.add(mes)
-
-        // In case when a node has no outgoing edges
-        if (nOfOutstandingRequests == 0) {
-            replyToRequests()
-        }
     }
 
     fun checkForCyclesAndNewTags(mes: RequestRebalancingMessage): Boolean {
@@ -307,14 +308,23 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             receivedReqTags.addAll(mes.seenSet)
             logger.debug("$topic message got new tags, sending update messages with new tags $newSeenSetEntries")
 
-            var receivedSuccessChannels = receivedSuccesses.map{i -> i.channel}.toHashSet()
-            for (channel in outgoingDemandEdges) {
-                if (!(channel in receivedSuccessChannels)) {
-                    sendMessage(UpdateRebalancingMessage(MessageTypes.UPDATE_R, this, channel.getOppositeNode(this), channel, mes.startId, mes.executionId, newSeenSetEntries))
-                }
+            for (channel in this.getChannelsThatHaveNotReplied()) {
+                sendMessage(UpdateRebalancingMessage(MessageTypes.UPDATE_R, this, channel.getOppositeNode(this), channel, mes.startId, mes.executionId, newSeenSetEntries))
             }
         }
         return true
+    }
+
+    fun getChannelsThatHaveNotReplied(): Set<PaymentChannel> {
+        return outgoingDemandEdges.subtract(this.getChannelsThatReplied())
+    }
+
+    fun getChannelsThatReplied(): Set<PaymentChannel> {
+        return this.getChannelsThatRepliedWithSuccess().union(failedChannels)
+    }
+
+    fun getChannelsThatRepliedWithSuccess(): Set<PaymentChannel> {
+        return receivedSuccesses.map{i -> i.channel}.toHashSet()
     }
 
     fun handleUpdateMessage(mes: UpdateRebalancingMessage) {
@@ -381,6 +391,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
         if (roundStateMachine.isInState(RoundState.REQ)) {
             nOfOutstandingRequests--
+            failedChannels.add(mes.channel)
 
             if (nOfOutstandingRequests == 0) {
                 replyToRequests()
@@ -470,7 +481,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             pairs.first.add(TagDemandHTLCPair(entry.key, entry.value.demand, htlc))
             
         }
-        for (channel in outgoingDemandEdges) {
+        for (channel in this.getChannelsThatRepliedWithSuccess()) {
             if (channel in P) {
                 sendMessage(CommitRebalancingMessage(MessageTypes.COMMIT_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), this.executionId!!, P.get(channel)!!.first, P.get(channel)!!.second))
             } else {
@@ -541,7 +552,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                     logger.debug("Added cycle with tag ${entry.key} to outgoing commits")
                 }
 
-                for (channel in outgoingDemandEdges) {
+                for (channel in this.getChannelsThatRepliedWithSuccess()) {
                     if (channel in K) {
                         val tagTxMap: MutableMap<Tag, Transaction> = HashMap()
                         for (pair in K.get(channel)!!) {
@@ -788,6 +799,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         forwardedNextRoundMessage = false
         safe = false
         nOfIgnoredCycles = 0
+        failedChannels = HashSet()
 
         channelSuccessMessage = HashSet()
         channelCommitMessage = HashSet()
