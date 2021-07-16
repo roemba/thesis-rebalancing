@@ -105,19 +105,34 @@ open class Node(val id: Int, val g: ChannelNetwork) {
 
     fun stopMessageSending() {
         // Process any unprocessed messages
-        // logger.debug("S: ${this.unprocessedMessages.size}")
-        val copyOfList = this.unprocessedMessages.toMutableList()
-        this.unprocessedMessages = ArrayList()
-        for (mess in copyOfList) {
-            sortMessage(mess)
-        }
+        var nOfProcessedMessages = 0
+        var totalNumberOfProcessedMessages = 0
+        do {
+            val copyOfList = this.unprocessedMessages.toMutableList()
+            this.unprocessedMessages = ArrayList()
+            nOfProcessedMessages = 0
+            var oldUnprocessedMessagesSize = 0
 
-        if (copyOfList.size > this.unprocessedMessages.size) {
-            logger.info("Processed ${copyOfList.size - this.unprocessedMessages.size} messages that couldn't be processed before")
+            for (mess in copyOfList) {
+                sortMessage(mess)
+                if (this.unprocessedMessages.size - oldUnprocessedMessagesSize == 0) { // Message got processed
+                    nOfProcessedMessages++
+                }
+                oldUnprocessedMessagesSize = this.unprocessedMessages.size
+            }
+
+            totalNumberOfProcessedMessages += nOfProcessedMessages
+        } while (nOfProcessedMessages != 0) // If a message gets processed, other unprocessable messages might also be processable now so we have to try again
+
+        if (totalNumberOfProcessedMessages != 0) {
+            logger.info("Processed ${totalNumberOfProcessedMessages} messages that couldn't be processed before")
         }
 
         if (this.unprocessedMessages.isNotEmpty()) {
             logger.info("${this.unprocessedMessages.size} unprocessed message(s)")
+            for (mess in this.unprocessedMessages) {
+                logger.debug("Unprocessed: $mess")
+            }
         }
 
         sendingEnabled = false
