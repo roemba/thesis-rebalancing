@@ -164,10 +164,6 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
 
     @Throws(IllegalStateException::class)
     fun lock() {
-        if (this.locked) {
-            return
-        }
-        //println("Locking $this")
         this.locked = true
 
         if (this.hasOngoingTx()) {
@@ -176,10 +172,6 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
     }
 
     fun unlock() {
-        if (!this.locked) {
-            return
-        }
-        //println("Unlocking $this")
         this.locked = false
     }
 

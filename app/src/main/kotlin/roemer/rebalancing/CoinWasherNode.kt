@@ -35,38 +35,73 @@ data class TagDemandHTLCPair(
 }
 
 class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebalancer {
+    val digest = MessageDigest.getInstance("SHA-256");
+    
     // Needs to be reset every time the algorithm runs
     var orderOfStarting: List<Tag>? = null
     var roundIndex = 0
     var rebalancingAwake = false
-    var outgoingDemandEdges: MutableSet<PaymentChannel> = HashSet()
-    var incomingDemandEdges: MutableSet<PaymentChannel> = HashSet()
+    lateinit var outgoingDemandEdges: MutableSet<PaymentChannel>
+    lateinit var incomingDemandEdges: MutableSet<PaymentChannel>
     
     // Needs to be reset every round
-    var roundStateMachine = StateMachine<RoundState>(logger, RoundState.WAIT)
-    var roundMessageHistory: MutableList<Message> = ArrayList()
+    lateinit var roundStateMachine: StateMachine<RoundState>
+    lateinit var roundMessageHistory: MutableList<Message>
     var nOfOutstandingRequests = 0
-    var anonIdChannelMap: MutableMap<Tag, PaymentChannel> = HashMap()
-    var cycleChannelPairsMap: MutableMap<Tag, CycleChannelPair> = HashMap()
-    var receivedRequests: MutableList<RequestRebalancingMessage> = ArrayList()
-    var receivedCommits: MutableList<CommitRebalancingMessage> = ArrayList()
-    var receivedCycleCommits: MutableList<CommitRebalancingMessage> = ArrayList()
-    var receivedSuccesses: MutableList<SuccessRebalancingMessage> = ArrayList()
-    var receivedReqTags: MutableSet<Tag> = HashSet()
-    var G: MutableMap<Tag, Pair<Int, PaymentChannel>> = HashMap()
-    var htlcMap: MutableMap<Tag, String> = HashMap()
-    var tagTransactionMap: MutableMap<Tag, Pair<PaymentChannel, Transaction>> = HashMap()
-    var sentSuccessChannel: MutableSet<PaymentChannel> = HashSet()
+    lateinit var anonIdChannelMap: MutableMap<Tag, PaymentChannel>
+    lateinit var cycleChannelPairsMap: MutableMap<Tag, CycleChannelPair>
+    lateinit var receivedRequests: MutableList<RequestRebalancingMessage>
+    lateinit var receivedCommits: MutableList<CommitRebalancingMessage>
+    lateinit var receivedCycleCommits: MutableList<CommitRebalancingMessage>
+    lateinit var receivedSuccesses: MutableList<SuccessRebalancingMessage>
+    lateinit var receivedReqTags: MutableSet<Tag>
+    lateinit var G: MutableMap<Tag, Pair<Int, PaymentChannel>>
+    lateinit var htlcMap: MutableMap<Tag, String>
+    lateinit var tagTransactionMap: MutableMap<Tag, Pair<PaymentChannel, Transaction>>
+    lateinit var sentSuccessChannel: MutableSet<PaymentChannel>
     var nOfIgnoredCycles = 0
     var forwardedNextRoundMessage = false
-    var safe = false
-    var failedChannels: MutableSet<PaymentChannel> = HashSet()
-    
-    // Need to be reset on class creation
-    val digest = MessageDigest.getInstance("SHA-256");
+    var executionSafe = false
+    lateinit var failedChannels: MutableSet<PaymentChannel>
+    lateinit var channelSuccessMessage: MutableSet<PaymentChannel>
+    lateinit var channelCommitMessage: MutableSet<PaymentChannel>
 
-    var channelSuccessMessage: MutableSet<PaymentChannel> = HashSet()
-    var channelCommitMessage: MutableSet<PaymentChannel> = HashSet()
+    init {
+        this.resetRoundVars()
+        this.resetRunVars()
+    }
+
+    fun resetRoundVars() {
+        roundStateMachine = StateMachine(logger, RoundState.WAIT)
+        roundMessageHistory = ArrayList()
+        nOfOutstandingRequests = 0
+        anonIdChannelMap = HashMap()
+        cycleChannelPairsMap = HashMap()
+        receivedRequests = ArrayList()
+        receivedCommits = ArrayList()
+        receivedCycleCommits = ArrayList()
+        receivedSuccesses = ArrayList()
+        receivedReqTags = HashSet()
+        G = HashMap()
+        htlcMap = HashMap()
+        tagTransactionMap = HashMap()
+        sentSuccessChannel = HashSet()
+        nOfIgnoredCycles = 0
+        forwardedNextRoundMessage = false
+        executionSafe = false
+        failedChannels = HashSet()
+
+        channelSuccessMessage = HashSet()
+        channelCommitMessage = HashSet()
+    }
+
+    fun resetRunVars() {
+        orderOfStarting = null
+        roundIndex = 0
+        rebalancingAwake = false
+        outgoingDemandEdges = HashSet()
+        incomingDemandEdges = HashSet()
+    }
     
     override fun sortMessage (message: Message) {
         when (message.type) {
@@ -118,17 +153,17 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         roundStateMachine.state = RoundState.REQ
         for (channel in outgoingDemandEdges) {
             val channelAnonId = Tag.createTag(this)
-            anonIdChannelMap.put(channelAnonId, channel)
-            val seenSet = receivedReqTags.plus(channelAnonId)
+            anonIdChannelMap[channelAnonId] = channel
+            val seenSet = receivedReqTags + channelAnonId
 
             sendMessage(RequestRebalancingMessage(MessageTypes.REQUEST_R, this, channel.getOppositeNode(this), channel, this.anonId!!, this.executionId!!, seenSet))
             nOfOutstandingRequests++
         }
     }
 
-    fun wakeUp(): Boolean {
+    fun wakeUp() {
         if (this.rebalancingAwake) {
-            return true // Already awake
+            return // Already awake
         }
 
         logger.debug("I'm waking up!")
@@ -151,17 +186,13 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         if (iStartedRound()) {
             this.startRound()
         }
-
-        return true
     }
 
     // ---------- START Message checking functions -------------
     fun runMultipleMessageCheckingFunc(m: RebalancingMessage, functions: Array<KFunction1<RebalancingMessage, Message?>>): Message? {
         for (func in functions) {
             val res = func(m)
-            if (res != null) {
-                return res
-            }
+            res?.let { return res }
         }
         return null
     }
@@ -218,7 +249,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     // ---------- END Message checking functions -------------
 
     fun checkForCycles(mes: RequestRebalancingMessage, seenSetToCheck: Set<Tag>): Boolean {
-        val intersect = anonIdChannelMap.keys.intersect(seenSetToCheck)
+        val intersect = anonIdChannelMap.keys intersect seenSetToCheck
         if (intersect.isNotEmpty()) {
             val channelAnonId = intersect.first() // We only care about one match
 
@@ -230,7 +261,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
             val cycleTag = Tag.createTag(this)
             val channelDemand = mes.channel.getDemand(null)
-            cycleChannelPairsMap.put(cycleTag, CycleChannelPair(mes.channel, anonIdChannelMap.get(channelAnonId)!!, channelDemand, false))
+            cycleChannelPairsMap[cycleTag] = CycleChannelPair(mes.channel, anonIdChannelMap.get(channelAnonId)!!, channelDemand, false)
             sentSuccessChannel.add(mes.channel)
             sendMessage(SuccessRebalancingMessage(
                 MessageTypes.SUCCESS_R, this, mes.sender, mes.channel, mes.startId, 
@@ -270,9 +301,9 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             roundStateMachine.state = RoundState.REQ
             for (channel in outgoingDemandEdges) {
                 val channelAnonId = Tag.createTag(this)
-                anonIdChannelMap.put(channelAnonId, channel)
+                anonIdChannelMap[channelAnonId] = channel
                 receivedReqTags.addAll(mes.seenSet)
-                val seenSet = receivedReqTags.plus(channelAnonId)
+                val seenSet = receivedReqTags + channelAnonId
 
                 sendMessage(RequestRebalancingMessage(MessageTypes.REQUEST_R, this, channel.getOppositeNode(this), channel, mes.startId, mes.executionId, seenSet))
                 nOfOutstandingRequests++
@@ -410,24 +441,21 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         for (success in receivedSuccesses) {
             for (tagDemandPair in success.tagList) {
                 if (tagDemandPair.tag in cycleChannelPairsMap) { 
-                    val entry = cycleChannelPairsMap.get(tagDemandPair.tag)!!
+                    val entry = cycleChannelPairsMap[tagDemandPair.tag]!!
                     if (!entry.completed || tagDemandPair.demand > entry.demand) {
                         logger.debug("Storing new demand ${tagDemandPair.demand} for cycle ${tagDemandPair.tag}")
-                        cycleChannelPairsMap.replace(tagDemandPair.tag, 
+                        cycleChannelPairsMap[tagDemandPair.tag] =
                             CycleChannelPair(
                                 entry.endChannel, 
                                 success.channel, 
                                 tagDemandPair.demand,
-                                true)
-                        )
+                                true
+                            )
                     }
                 } else {
                     logger.debug("Tag not in cyleMap, so putting it in G")
-                    if (!(tagDemandPair.tag in G)) {
-                        G.put(tagDemandPair.tag, Pair(tagDemandPair.demand, success.channel))
-                    }
-                    if (tagDemandPair.demand > G.get(tagDemandPair.tag)!!.first) {
-                        G.replace(tagDemandPair.tag, Pair(tagDemandPair.demand, success.channel))
+                    if (tagDemandPair.tag !in G || (tagDemandPair.demand > G[tagDemandPair.tag]!!.first)) {
+                        G[tagDemandPair.tag] = Pair(tagDemandPair.demand, success.channel)
                     }
                 }
             }
@@ -442,7 +470,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                 val N = splitEqually(request.channel.getDemand(null), F.map { e -> e.value.first }.toIntArray())
                 val K: MutableList<TagDemandPair> = ArrayList()
                 for (i in 0 until F.size) {
-                    K.add(TagDemandPair(F[i].key, N[i]))
+                    K += TagDemandPair(F[i].key, N[i])
                 }
                 sendMessage(SuccessRebalancingMessage(MessageTypes.SUCCESS_R, this, request.sender, request.channel, getRoundStarter(), this.executionId!!, K))
             }
@@ -463,7 +491,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             var htlc: ByteArray? = null
             if (entry.value.demand > 0) {
                 val preImage = UUID.randomUUID().toString()
-                htlcMap.put(entry.key, preImage)
+                htlcMap[entry.key] = preImage
     
                 htlc = digest.digest(preImage.encodeToByteArray())
                 val tx = Transaction(UUID.randomUUID(), entry.value.demand, this, entry.value.startChannel.getOppositeNode(this))
@@ -473,11 +501,11 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                     throw IllegalStateException("$this - Channel did not allow me to request TX!")
                 }
 
-                pairs.second.put(entry.key, tx)
+                pairs.second[entry.key] = tx
             }
 
             
-            pairs.first.add(TagDemandHTLCPair(entry.key, entry.value.demand, htlc))
+            pairs.first += TagDemandHTLCPair(entry.key, entry.value.demand, htlc)
             
         }
         for (channel in this.getChannelsThatRepliedWithSuccess()) {
@@ -519,7 +547,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
         
         val cycleEndChannels = cycleChannelPairsMap.values.map { v -> v.endChannel }
-        if (!(mes.channel in cycleEndChannels)) {
+        if (mes.channel !in cycleEndChannels) {
             receivedCommits.add(mes)
 
             if (receivedCommits.size == receivedRequests.size) { // Forward commits
@@ -528,7 +556,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                 for (commit in receivedCommits) {
                     for (tagDemandPair in commit.tagList) {
                         val pairs = K.getOrPut(G.get(tagDemandPair.tag)!!.second) { ArrayList() }
-                        pairs.add(tagDemandPair)
+                        pairs += tagDemandPair
                     }
                 }
                 for (entry in cycleChannelPairsMap.entries) {
@@ -541,27 +569,29 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                     var htlc: ByteArray? = null
                     if (entry.value.demand > 0) {
                         val preImage = UUID.randomUUID().toString()
-                        htlcMap.put(entry.key, preImage)
+                        htlcMap[entry.key] = preImage
     
                         htlc = digest.digest(preImage.encodeToByteArray())
                     }
 
                     val pairs = K.getOrPut(entry.value.startChannel, { ArrayList() })
-                    pairs.add(TagDemandHTLCPair(entry.key, entry.value.demand, htlc))
+                    pairs += TagDemandHTLCPair(entry.key, entry.value.demand, htlc)
+
                     logger.debug("Added cycle with tag ${entry.key} to outgoing commits")
                 }
 
                 for (channel in this.getChannelsThatRepliedWithSuccess()) {
-                    if (channel in K) {
+                    val pairs = K[channel]
+                    if (pairs != null) {
                         val tagTxMap: MutableMap<Tag, Transaction> = HashMap()
-                        for (pair in K.get(channel)!!) {
+                        for (pair in pairs) {
                             if (pair.htlc != null) {
                                 val tx = Transaction(UUID.randomUUID(), pair.demand, this, channel.getOppositeNode(this))
                                 logger.debug("Requesting tx on ${pair.tag}")
                                 if (!channel.requestTx(tx, pair.htlc, true)) {
                                     throw IllegalStateException("$this - Channel did not allow me to request TX!")
                                 }
-                                tagTxMap.put(pair.tag, tx)
+                                tagTxMap[pair.tag] = tx
                             }
                         }
                         sendMessage(CommitRebalancingMessage(MessageTypes.COMMIT_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), this.executionId!!, K.get(channel)!!, tagTxMap))
@@ -581,9 +611,9 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             for (commit in receivedCommits) {
                 for (tagDemandPair in commit.tagList) {
                     if (tagDemandPair.tag in commit.tagTxMap) {
-                        assert(!(tagDemandPair.tag in tagTransactionMap))
+                        assert(tagDemandPair.tag !in tagTransactionMap)
 
-                        tagTransactionMap.put(tagDemandPair.tag, Pair(commit.channel, commit.tagTxMap.get(tagDemandPair.tag)!!))
+                        tagTransactionMap[tagDemandPair.tag] = Pair(commit.channel, commit.tagTxMap.get(tagDemandPair.tag)!!)
                     }
                 }
             }
@@ -594,8 +624,8 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             for (commit in receivedCycleCommits) {
                 for (tagDemandPair in commit.tagList) {
                     if (tagDemandPair.tag in commit.tagTxMap) {
-                        val preImage = htlcMap.get(tagDemandPair.tag)!!
-                        commit.channel.executeTx(commit.tagTxMap.get(tagDemandPair.tag)!!, digest.digest(preImage.encodeToByteArray()))
+                        val preImage = htlcMap[tagDemandPair.tag]!!
+                        commit.channel.executeTx(commit.tagTxMap[tagDemandPair.tag]!!, digest.digest(preImage.encodeToByteArray()))
                         commit.channel.unlock()
                         sendMessage(ExecuteRebalancingMessage(
                             MessageTypes.EXEC_R, this, commit.channel.getOppositeNode(this), commit.channel, this.getRoundStarter(), this.executionId!!,
@@ -605,19 +635,10 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                 }
             }
 
-            // If there are no commits from sources other than an owned cycle, continue to next round
-            if (tagTransactionMap.isEmpty()) { 
-                safe = true
-                logger.debug("Now safe")
-                if (iStartedRound() || forwardedNextRoundMessage) {
-                    nextRound()
-                }
-            } else {
-                logger.debug("Still waiting for execution messages for ${tagTransactionMap.keys}")
-            }
+            checkIfExecutionSafe()
         } else {
             logger.debug("#ofReceivedCommits: ${receivedCommits.size} #ofReceivedCycleCommits: ${receivedCycleCommits.size} #ofIgnoredCycles: $nOfIgnoredCycles #ofReceivedRequests: ${receivedRequests.size} #ofCycleChannelPairsMap ${cycleChannelPairsMap.size}")
-            val nodesThatStillNeedToCommit = receivedRequests.map {m -> m.sender } .subtract(receivedCommits.map {m -> m.sender })
+            val nodesThatStillNeedToCommit = receivedRequests.map {m -> m.sender } - receivedCommits.map {m -> m.sender }
             for (node in nodesThatStillNeedToCommit) {
                 logger.debug("$node still needs to send a commit message")
             }
@@ -645,7 +666,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
         roundMessageHistory.add(mes)
 
-        if (!(mes.tag in tagTransactionMap)) {
+        if (mes.tag !in tagTransactionMap) {
             if (mes.tag in cycleChannelPairsMap) {
                 logger.debug("Received execution message back for own cycle ${mes.tag}, skipping...")
                 return
@@ -654,7 +675,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             }
         }
 
-        val entryValue = tagTransactionMap.get(mes.tag)!!
+        val entryValue = tagTransactionMap[mes.tag]!!
         logger.info("Executing ${mes.tag}")
         entryValue.first.executeTx(entryValue.second, digest.digest(mes.preImage.encodeToByteArray()))
         entryValue.first.unlock()
@@ -665,48 +686,47 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
         tagTransactionMap.remove(mes.tag)
 
-        if (tagTransactionMap.isEmpty()) {
-            safe = true
-            logger.debug("Now safe")
-            if (forwardedNextRoundMessage) {
-                nextRound()
-            }
-        } else {
-            logger.debug("Still waiting for ${tagTransactionMap.keys}")
-        }
+        checkIfExecutionSafe()
     }
 
     fun handleNextRoundMessage(mes: NextRoundMessage) {
         // --- START checks
         val checkBeforeWaking = arrayOf(this::deferProcessingIfNotFinishedWithPartDisc, this::disallowIncorrectExecutionId)
         val checkBeforeWakeRes = this.runMultipleMessageCheckingFunc(mes, checkBeforeWaking)
-        if (checkBeforeWakeRes != null) {
-            return sendMessage(checkBeforeWakeRes)
-        }
+        checkBeforeWakeRes?.let { return sendMessage(checkBeforeWakeRes) }
 
         this.wakeUp()
 
-        if (this.disallowIfFromEarlierRound(mes) != null) {
-            return // Filter out FailMessages that relate to incorrect round, as this happens often
-        }
+        this.disallowIfFromEarlierRound(mes)?.let { return } // Filter out FailMessages that relate to incorrect round, as this happens often
         val checkAfterWakeRes = this.deferProcessingIfFromFutureRound(mes)
-        if (checkAfterWakeRes != null) {
-            return sendMessage(checkAfterWakeRes)
-        }
+        checkAfterWakeRes?.let { return sendMessage(checkAfterWakeRes) }
         // --- END checks
 
         roundMessageHistory.add(mes)
 
         if (!forwardedNextRoundMessage) {
-            for (channel in outgoingDemandEdges.union(incomingDemandEdges)) {
+            for (channel in (outgoingDemandEdges union incomingDemandEdges)) {
                 sendMessage(NextRoundMessage(MessageTypes.NEXT_ROUND_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), executionId!!))
             }
             forwardedNextRoundMessage = true
         }
 
-        if (roundStateMachine.isInState(RoundState.WAIT) || safe) {
+        if (canGoToNextRound()) {
             logger.debug("Pushed to next round by nextRoundMessage")
             nextRound()
+        }
+    }
+
+    // If there are no commits from sources other than an owned cycle, continue to next round
+    fun checkIfExecutionSafe() {
+        if (tagTransactionMap.isEmpty()) {
+            executionSafe = true
+            logger.debug("Now executionSafe")
+            if (canGoToNextRound()) {
+                nextRound()
+            }
+        } else {
+            logger.debug("Still waiting for ${tagTransactionMap.keys}")
         }
     }
 
@@ -762,16 +782,22 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         return R
     }
 
+    fun canGoToNextRound(): Boolean {
+        return roundStateMachine.isInState(RoundState.WAIT) || (executionSafe && (forwardedNextRoundMessage || iStartedRound()))
+    }
+
     fun nextRound() {
         // Unlock all incoming edges for normal txs, as those can only be executed by current node
         for (channel in incomingDemandEdges) {
-            if (!channel.hasOngoingTx()) {
-                channel.unlock()     
+            if (channel.hasOngoingTx()) {
+                throw IllegalStateException("Channel $channel is not allowed to be unlocked by $this as it still has ongoing transactions!")
             }
+            
+            channel.unlock()    
         }
 
         if (iStartedRound()) {
-            for (channel in outgoingDemandEdges.union(incomingDemandEdges)) {
+            for (channel in (outgoingDemandEdges union incomingDemandEdges)) {
                 sendMessage(NextRoundMessage(MessageTypes.NEXT_ROUND_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), executionId!!))
             }
         }
@@ -780,28 +806,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         roundIndex++
         logger.debug("Going to round $roundIndex!")
 
-        // Reset round variables
-        roundStateMachine = StateMachine(logger, RoundState.WAIT)
-        roundMessageHistory = ArrayList()
-        nOfOutstandingRequests = 0
-        anonIdChannelMap = HashMap()
-        cycleChannelPairsMap = HashMap()
-        receivedRequests = ArrayList()
-        receivedCommits = ArrayList()
-        receivedCycleCommits = ArrayList()
-        receivedSuccesses = ArrayList()
-        receivedReqTags = HashSet()
-        G = HashMap()
-        htlcMap = HashMap()
-        tagTransactionMap = HashMap()
-        sentSuccessChannel = HashSet()
-        forwardedNextRoundMessage = false
-        safe = false
-        nOfIgnoredCycles = 0
-        failedChannels = HashSet()
-
-        channelSuccessMessage = HashSet()
-        channelCommitMessage = HashSet()
+        this.resetRoundVars()
 
         if (roundIndex >= this.orderOfStarting!!.size) {
             return terminateRebalancing(true)
@@ -821,11 +826,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             logger.info("Terminated rebalancing unsuccessfully")
         }
 
-        orderOfStarting = null
-        roundIndex = 0
-        rebalancingAwake = false
-        outgoingDemandEdges = HashSet()
-        incomingDemandEdges = HashSet()
+        this.resetRunVars()
         this.reset()
     }
 }
