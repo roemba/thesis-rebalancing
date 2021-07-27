@@ -19,13 +19,13 @@ A graph consists of `Node`s, which hold a `Queue` that receives messages from ot
 
 ## TODOs
 
-- Debug CoinWasherNode
+- ~~Debug CoinWasherNode~~
 - Finish and debug ReviveNode
 - Improve delays by using an actual latency model
 - Generate balances and transactions using a model instead of using a random generator
 - Setup proper testing
 - Improve package structure, i.e. split `roemer/rebalancing` into model infrastructure and `CoinWasher` and split the `Message.kt` file into multiple, smaller files. 
-- Add execution independent time, i.e. event time
+- ~~Add execution independent time, i.e. event time~~
 
 ## Logging
 
