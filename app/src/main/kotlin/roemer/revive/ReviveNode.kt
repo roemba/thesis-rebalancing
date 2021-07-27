@@ -25,10 +25,11 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
         return this.rebalancingAwake
     }
 
-    override fun startSubAlgos(hopCount: Int, maxNOfInvites: Int): SimulationInput {
+    override fun startSubAlgos(algoSettings: Map<String, Any>): SimulationInput {
         logger.info("Starting participant discovery before rebalancing")
+        this.algoSettings = algoSettings
 
-        return this.findParticipants(hopCount, maxNOfInvites)
+        return this.findParticipants(algoSettings)
     }
 
     override fun rebalance(event: StartStopEvent): SimulationInput {

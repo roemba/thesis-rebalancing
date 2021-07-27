@@ -81,10 +81,10 @@ class InviteParticipantMessage(
     channel: PaymentChannel,
     executionId: Tag,
     val hopCount: Int,
-    val maxNumberOfInvites: Int
+    val algoSettings: Map<String, Any>
 ): ParticipantMessage(type, sender, recipient, channel, executionId) {
     override fun toString(): String {
-        return "InviteParticipantMessage(sender=$sender, recipient=$recipient, executionId=$executionId, hopCount=$hopCount, maxNumberOfInvites=$maxNumberOfInvites, channel=${channel.id})"
+        return "InviteParticipantMessage(sender=$sender, recipient=$recipient, executionId=$executionId, hopCount=$hopCount, channel=${channel.id})"
     }
 }
 

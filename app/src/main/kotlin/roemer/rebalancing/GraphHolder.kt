@@ -88,7 +88,7 @@ class GraphHolder {
         return SeededRandom.random.nextLong(1L, 100L)
     }
 
-    fun start (hopCount: Int, maxNumberOfInvites: Int) {
+    fun start (algoSettings: Map<String, Any>) {
         // Statistics and logging
         saveChannelBalances()
 
@@ -103,8 +103,8 @@ class GraphHolder {
             if (!started) {
                 val startNode = nodes[0]
                 when (this.nodeType) {
-                    NodeTypes.CoinWasher, NodeTypes.Revive -> simulInput = (startNode as Rebalancer).startSubAlgos(hopCount, maxNumberOfInvites)
-                    NodeTypes.ParticipantDisc -> simulInput = (startNode as ParticipantNodeAlt).findParticipants(hopCount, maxNumberOfInvites)
+                    NodeTypes.CoinWasher, NodeTypes.Revive -> simulInput = (startNode as Rebalancer).startSubAlgos(algoSettings)
+                    NodeTypes.ParticipantDisc -> simulInput = (startNode as ParticipantNodeAlt).findParticipants(algoSettings)
                 }     
 
                 started = true

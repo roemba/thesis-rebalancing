@@ -21,6 +21,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
     var receivedResponses = 0
     var sendFinalList = false
     var result: ParticipantFindingResult? = null
+    lateinit var algoSettings: Map<String, Any>
     
     override fun sortMessage (message: Message) {
         when (message.type) {
@@ -34,7 +35,8 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         }
     }
 
-    fun findParticipants(hopCount: Int, maxNOfInvites: Int): SimulationInput {
+    fun findParticipants(algoSettings: Map<String, Any>): SimulationInput {
+        this.algoSettings = algoSettings
         this.initMessageSending()
 
         this.awake = true
@@ -47,7 +49,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
 
         for (channel in this.paymentChannels) {
             sendMessage(InviteParticipantMessage(
-                MessageTypes.INVITE_P, this, channel.getOppositeNode(this), channel, executionId!!, hopCount, maxNOfInvites
+                MessageTypes.INVITE_P, this, channel.getOppositeNode(this), channel, executionId!!, algoSettings["hopCount"] as Int, this.algoSettings
             ))
             invitedEdges.add(channel)
             nOfExpectedResponses++
@@ -76,6 +78,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         // If not already claimed or finished, become claimed
         if (executionId == null && result == null) {
             executionId = mes.executionId
+            this.algoSettings = mes.algoSettings
             anonId = Tag.createTag(this)
             participants.add(anonId!!)
             parentEdge = mes.channel
@@ -89,17 +92,18 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
             }
             
             // If not awake, propagate invite to other channels
+            val maxNumberOfInvites = this.algoSettings["maxNumberOfInvites"] as Int
             if (!this.awake) {
                 this.awake = true
                 for (channel in this.paymentChannels) {
                     if (channel !== parentEdge && !(channel in deniedEdges)) {
                         sendMessage(InviteParticipantMessage(
-                            MessageTypes.INVITE_P, this, channel.getOppositeNode(this), channel, executionId!!, mes.hopCount - 1, mes.maxNumberOfInvites
+                            MessageTypes.INVITE_P, this, channel.getOppositeNode(this), channel, executionId!!, mes.hopCount - 1, this.algoSettings
                         ))
                         invitedEdges.add(channel)
                         nOfExpectedResponses++
 
-                        if (invitedEdges.size >= mes.maxNumberOfInvites) {
+                        if (invitedEdges.size >= maxNumberOfInvites) {
                             break
                         }
                     }

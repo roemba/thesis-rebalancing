@@ -105,7 +105,7 @@ open class Node(val id: Int, val g: ChannelNetwork) {
 
     fun stopMessageSending() {
         // Process any unprocessed messages
-        var nOfProcessedMessages = 0
+        var nOfProcessedMessages: Int
         var totalNumberOfProcessedMessages = 0
         do {
             val copyOfList = this.unprocessedMessages.toMutableList()

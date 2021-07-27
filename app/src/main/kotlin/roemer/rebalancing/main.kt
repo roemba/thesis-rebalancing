@@ -7,8 +7,10 @@ import roemer.revive.LpSolveDemo
 fun main(args: Array<String>) {
     println("Program has started")
 
-    //val graph = GraphHolder("prot_graph.txt", NodeTypes.CoinWasher)
+    //val graph = GraphHolder("difficult_graph.txt", NodeTypes.CoinWasher)
     val graph = GraphHolder("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.CoinWasher)
-    graph.start(3, 20)
+
+    val algoSettings = mapOf("hopCount" to 3, "maxNumberOfInvites" to 20, "percentageOfLeaders" to 0.1F)
+    graph.start(algoSettings)
     // LpSolveDemo().demo()
 }

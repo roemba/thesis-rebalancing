@@ -3,6 +3,7 @@ package roemer.rebalancing
 import java.util.UUID
 import java.security.MessageDigest
 import kotlin.reflect.KFunction1
+import kotlin.math.roundToInt
 
 enum class RoundState {
     WAIT, REQ, SUC, COM, EXEC
@@ -38,11 +39,12 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     val digest = MessageDigest.getInstance("SHA-256");
     
     // Needs to be reset every time the algorithm runs
-    var orderOfStarting: List<Tag>? = null
+    lateinit var orderOfStarting: List<Tag>
     var roundIndex = 0
     var rebalancingAwake = false
     lateinit var outgoingDemandEdges: MutableSet<PaymentChannel>
     lateinit var incomingDemandEdges: MutableSet<PaymentChannel>
+    var maxRound = 0
     
     // Needs to be reset every round
     lateinit var roundStateMachine: StateMachine<RoundState>
@@ -96,11 +98,12 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     }
 
     fun resetRunVars() {
-        orderOfStarting = null
+        orderOfStarting = ArrayList()
         roundIndex = 0
         rebalancingAwake = false
         outgoingDemandEdges = HashSet()
         incomingDemandEdges = HashSet()
+        maxRound = 0
     }
     
     override fun sortMessage (message: Message) {
@@ -122,10 +125,11 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         return this.rebalancingAwake
     }
 
-    override fun startSubAlgos(hopCount: Int, maxNOfInvites: Int): SimulationInput {
+    override fun startSubAlgos(algoSettings: Map<String, Any>): SimulationInput {
         logger.info("Starting participant discovery before rebalancing")
+        this.algoSettings = algoSettings
 
-        return this.findParticipants(hopCount, maxNOfInvites)
+        return this.findParticipants(algoSettings)
     }
 
     override fun rebalance(event: StartStopEvent): SimulationInput {
@@ -171,6 +175,9 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         this.orderOfStarting = this.result!!.finalParticipants.toList().sorted()
         this.rebalancingAwake = true
 
+        val percentageOfLeaders = this.algoSettings["percentageOfLeaders"] as Float
+        this.maxRound = (this.orderOfStarting.size.toFloat() * percentageOfLeaders).roundToInt()
+
         for (channel in this.result!!.acceptedEdges) {
             val demand = channel.getDemand(this)
             // logger.debug("Sorting $channel with balance $demand")
@@ -214,7 +221,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     }
 
     fun disallowIfFromEarlierRound(mes: RebalancingMessage): Message? {
-        if (this.orderOfStarting!!.indexOf(mes.startId) < this.roundIndex) {
+        if (this.orderOfStarting.indexOf(mes.startId) < this.roundIndex) {
             logger.warn("Received message from earlier round")
             return FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_ROUND, mes.startId, this.executionId)
         }
@@ -239,7 +246,11 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     }
 
     fun deferProcessingIfFromFutureRound(mes: RebalancingMessage): Message? {
-        if (this.orderOfStarting!!.indexOf(mes.startId) > this.roundIndex) {
+        val roundIndexOfMessage = this.orderOfStarting.indexOf(mes.startId)
+        if (roundIndexOfMessage > this.roundIndex) {
+            if (roundIndexOfMessage > this.maxRound) {
+                throw IllegalStateException("Future round will never be reached!")
+            }
             logger.warn("Message is for future round!")
             return mes // Add message to back of queue to try again later
         }
@@ -430,12 +441,12 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     }
 
     fun replyToRequests() {
-        if (roundStateMachine.isInState(RoundState.REQ)) {
-            roundStateMachine.state = RoundState.SUC
+        if (!roundStateMachine.isInState(RoundState.REQ)) {
+            throw IllegalStateException("$this can only reply if in RoundState.SUC!")
         }
 
-        if (!roundStateMachine.isInState(RoundState.SUC)) {
-            return
+        if (roundStateMachine.isInState(RoundState.REQ)) {
+            roundStateMachine.state = RoundState.SUC
         }
 
         for (success in receivedSuccesses) {
@@ -731,7 +742,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     }
 
     fun getRoundStarter(): Tag {
-        return this.orderOfStarting!![this.roundIndex]
+        return this.orderOfStarting[this.roundIndex]
     }
 
     fun getRoundStarterAsNode(): Node? {
@@ -808,7 +819,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
         this.resetRoundVars()
 
-        if (roundIndex >= this.orderOfStarting!!.size) {
+        if (roundIndex >= this.maxRound) {
             return terminateRebalancing(true)
         }
 
