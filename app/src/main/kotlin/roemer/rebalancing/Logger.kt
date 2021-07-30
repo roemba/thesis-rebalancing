@@ -15,7 +15,7 @@ class Logger(val vertex: Node) {
     val ANSI_CYAN = "\u001B[36m";
     val ANSI_WHITE = "\u001B[37m";
     val colors = arrayOf(ANSI_RED, ANSI_GREEN, ANSI_YELLOW, ANSI_BLUE, ANSI_PURPLE, ANSI_CYAN, ANSI_WHITE)
-    val logLevel = LEVEL.INFO
+    val logLevel = LEVEL.DEBUG
 
     companion object {
         var time = 0L

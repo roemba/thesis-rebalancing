@@ -6,6 +6,7 @@ import roemer.rebalancing.PaymentChannel
 import roemer.rebalancing.Node
 import roemer.rebalancing.Tag
 import roemer.rebalancing.Payment
+import roemer.rebalancing.ChannelTransaction
 
 open class ReviveMessage(
     type: MessageTypes,
@@ -39,5 +40,30 @@ class DemandMessage(
 ): ReviveMessage(type, sender, recipient, executionId) {
     override fun toString(): String {
         return "DemandMessage(type=$type, sender=$sender, recipient=$recipient, executionId=$executionId)"
+    }
+}
+
+class SigningRequestMessage(
+    type: MessageTypes,
+    sender: Node,
+    recipient: Node,
+    executionId: Tag,
+    val transactions: List<ChannelTransaction>,
+    val digest: ByteArray
+): ReviveMessage(type, sender, recipient, executionId) {
+    override fun toString(): String {
+        return "SigningRequestMessage(type=$type, sender=$sender, recipient=$recipient, digest=$digest)"
+    }
+}
+
+class SignedTxSetMessage(
+    type: MessageTypes,
+    sender: Node,
+    recipient: Node,
+    executionId: Tag,
+    val signature: Signature,
+): ReviveMessage(type, sender, recipient, executionId) {
+    override fun toString(): String {
+        return "SignedTxSetMessage(type=$type, sender=$sender, recipient=$recipient, signature=$signature)"
     }
 }

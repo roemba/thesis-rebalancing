@@ -21,6 +21,9 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
     var denyMessages: MutableList<ReviveMessage> = ArrayList()
     var demandMessages: MutableList<DemandMessage> = ArrayList()
 
+    lateinit var roundParticipants: List<Node>
+    lateinit var channelsToRebalance: Set<PaymentChannel>
+
     override fun isRebalancingAwake(): Boolean {
         return this.rebalancingAwake
     }
@@ -109,6 +112,8 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
             MessageTypes.CONFIRM_REV, MessageTypes.DENY_REV -> handleConfirmDenyMessage(message as ReviveMessage)
             MessageTypes.ROUND_CONFIRM_REV -> handleRoundConfirmMessage(message as StartRoundMessage)
             MessageTypes.DEMAND_REV -> handleDemandMessage(message as DemandMessage)
+            MessageTypes.TX_SET_REV -> handleSigningTxSetRequestMessage(message as SigningRequestMessage)
+            MessageTypes.SIGNED_TX_SET_REV -> println("Not implemented")
             else -> {
                 super.sortMessage(message)
             }
@@ -163,10 +168,10 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
 
             if (confirmMessages.size + denyMessages.size == initMessages.size) {
                 stateMachine.state = State.COLLECTION
-                val participants = confirmMessages.map { m -> m.sender }
+                this.roundParticipants = confirmMessages.map { m -> m.sender }
 
                 for (m in confirmMessages) {
-                    sendMessage(StartRoundMessage(MessageTypes.ROUND_CONFIRM_REV, this, m.sender, this.executionId!!, participants), true)
+                    sendMessage(StartRoundMessage(MessageTypes.ROUND_CONFIRM_REV, this, m.sender, this.executionId!!, this.roundParticipants), true)
                 }
             }
         }
@@ -179,14 +184,15 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
         if (stateMachine.isInState(State.CONFIRMATION)) {
             stateMachine.state = State.COLLECTION
 
-            val channelsToRebalance = outgoingDemandEdges.union(incomingDemandEdges)
-            for (channel in channelsToRebalance) {
+            this.channelsToRebalance = outgoingDemandEdges.union(incomingDemandEdges)
+            this.roundParticipants = message.participants
+            for (channel in this.channelsToRebalance) {
                 channel.lock() // Make sure the channel locks now
             }
 
             // TODO: Add filter here that randomly denies some edges to participate in rebalancing
 
-            sendMessage(DemandMessage(MessageTypes.DEMAND_REV, this, this.leader!!, this.executionId!!, channelsToRebalance), true)
+            sendMessage(DemandMessage(MessageTypes.DEMAND_REV, this, this.leader!!, this.executionId!!, this.channelsToRebalance), true)
         }
     }
 
@@ -200,12 +206,19 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
             if (demandMessages.size == confirmMessages.size) {
                 stateMachine.state = State.SIGNING
 
-                generateTxSet(demandMessages)
+                val (channelDemands, channels) = generateTxSet(demandMessages)
+                val transactions = createTransactions(channelDemands, channels)
+
+                val treeDigest = MerkleTree(transactions + this.roundParticipants).digest()
+
+                for (node in this.roundParticipants) {
+                    sendMessage(SigningRequestMessage(MessageTypes.TX_SET_REV, this, node, this.executionId!!, transactions, treeDigest), true)
+                }
             }
         }
     }
 
-    fun generateTxSet (messages: List<DemandMessage>) {
+    fun generateTxSet (messages: List<DemandMessage>): Pair<DoubleArray, List<PaymentChannel>> {
         val allChannels = messages.map { m -> m.channelsToRebalance }.reduce {accSet, channelSet -> accSet.union(channelSet)}.toList()
         val allNodes = messages.map { m -> m.sender }
         
@@ -269,8 +282,64 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
             }
 
             solver.deleteLp()
+
+            return Pair(pointerVariables, allChannels)
         } catch (e: LpSolveException) {
             e.printStackTrace()
+            throw e
         }
+    }
+
+    fun createTransactions (channelDemands: DoubleArray, channels: List<PaymentChannel>): List<ChannelTransaction> {
+        val transactions: MutableList<ChannelTransaction> = ArrayList()
+        for (i in 0 until channelDemands.size) {
+            var from = channels[i].node1
+            var to = channels[i].node2
+            val node1Demand = channels[i].getCurrentDemand(channels[i].node1)
+            if (node1Demand > 0) {
+                val temp = to
+                to = from
+                from = temp
+            }
+            val tx = ChannelTransaction(SeededRandom.getRandomUUID(), channelDemands[i].toInt(), from, to, SeededRandom.getRandomUUID(), channels[i])
+            transactions += tx
+        }
+
+        return transactions
+    }
+
+    fun handleSigningTxSetRequestMessage (message: SigningRequestMessage) {
+        assert(this.leader !== this)
+        if (!this.checkMessage(message, true)) { return }
+
+        logger.debug("Starting checking transaction set")
+
+        if (stateMachine.isInState(State.COLLECTION)) {
+            stateMachine.state = State.SIGNING
+        } else { throw IllegalStateException("Expected to be in state COLLECTION when starting to sign!") }
+
+        var totalBalance = 0
+        val myTransactions: MutableList<ChannelTransaction> = ArrayList()
+        for (transaction in message.transactions) {
+            if (transaction.from == this) {
+                totalBalance -= transaction.amount
+                myTransactions += transaction
+            } else if (transaction.to == this) {
+                totalBalance += transaction.amount
+                myTransactions += transaction
+            }
+        }
+        if (totalBalance != 0) { throw IllegalStateException("$this will lose/gain $totalBalance from this rebalancing!") }
+
+        val treeDigest = MerkleTree(message.transactions + this.roundParticipants).digest()
+        if (!(treeDigest contentEquals message.digest)) {
+            throw IllegalStateException("$this cannot reconstruct the Merkle tree from the given transactions!")
+        }
+
+        for (transaction in myTransactions) {
+            transaction.channel.requestTx(transaction, null, true)
+        }
+        
+        sendMessage(SignedTxSetMessage(MessageTypes.SIGNED_TX_SET_REV, this, this.leader!!, this.executionId!!, Signature(this, message.digest)), true)
     }
 }
