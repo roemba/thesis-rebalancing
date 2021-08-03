@@ -35,4 +35,8 @@ class StartStopEvent (
     val desc: StartStopDescription
 ): Event(time)
 
-typealias SimulationInput = Pair<List<Message>, StartStopDescription?>
+data class SimulationInput (
+    val creator: Node,
+    val messages: List<Message>,
+    val startStopDes: StartStopDescription?
+)

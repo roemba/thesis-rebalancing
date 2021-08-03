@@ -11,18 +11,42 @@ enum class State {
 class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebalancer {
     var orderOfStarting: List<Tag>? = null
     var rebalancingAwake = false
-    var outgoingDemandEdges: MutableSet<PaymentChannel> = HashSet()
-    var incomingDemandEdges: MutableSet<PaymentChannel> = HashSet()
+    lateinit var outgoingDemandEdges: MutableSet<PaymentChannel>
+    lateinit var incomingDemandEdges: MutableSet<PaymentChannel>
     var leader: Node? = null
 
-    var stateMachine = StateMachine<State>(logger, State.WAITING)
-    var initMessages: MutableList<ReviveMessage> = ArrayList()
-    var confirmMessages: MutableList<ReviveMessage> = ArrayList()
-    var denyMessages: MutableList<ReviveMessage> = ArrayList()
-    var demandMessages: MutableList<DemandMessage> = ArrayList()
+    lateinit var clientStateMachine: StateMachine<State>
+    lateinit var leaderStateMachine: StateMachine<State>
+    lateinit var initMessages: MutableList<ReviveMessage>
+    lateinit var confirmMessages: MutableList<ReviveMessage>
+    lateinit var denyMessages: MutableList<ReviveMessage>
+    lateinit var demandMessages: MutableList<DemandMessage>
+    lateinit var signatures: MutableList<Signature>
+    lateinit var myTransactions: MutableList<ChannelTransaction>
 
     lateinit var roundParticipants: List<Node>
     lateinit var channelsToRebalance: Set<PaymentChannel>
+
+    init {
+        this.resetRunVars()
+    }
+
+    fun resetRunVars() {
+        orderOfStarting = null
+        rebalancingAwake = false
+        outgoingDemandEdges = HashSet()
+        incomingDemandEdges = HashSet()
+        leader = null
+    
+        clientStateMachine = StateMachine(logger, State.WAITING)
+        leaderStateMachine = StateMachine(logger, State.WAITING)
+        initMessages = ArrayList()
+        confirmMessages = ArrayList()
+        denyMessages = ArrayList()
+        demandMessages = ArrayList()
+        signatures = ArrayList()
+        myTransactions = ArrayList()
+    }
 
     override fun isRebalancingAwake(): Boolean {
         return this.rebalancingAwake
@@ -45,14 +69,13 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
 
         this.wakeUp()
 
-        if (this.leader !== this) {
-            this.startClient()
-        } else {
+        this.startClient()
+        if (this.leader === this) {
             logger.info("I'm the leader!")
         }
 
         this.stopMessageSending()
-        return Pair(this.sendingList, this.startStopDesc)
+        return SimulationInput(this, this.sendingList, this.startStopDesc)
     }
 
     fun wakeUp(): Boolean {
@@ -113,14 +136,13 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
             MessageTypes.ROUND_CONFIRM_REV -> handleRoundConfirmMessage(message as StartRoundMessage)
             MessageTypes.DEMAND_REV -> handleDemandMessage(message as DemandMessage)
             MessageTypes.TX_SET_REV -> handleSigningTxSetRequestMessage(message as SigningRequestMessage)
-            MessageTypes.SIGNED_TX_SET_REV -> println("Not implemented")
+            MessageTypes.SIGNED_TX_SET_REV -> handleSignedTxSetMessage(message as SignedTxSetMessage)
+            MessageTypes.COMPLETE_TX_SET_REV -> handleCompleteTxSetMessage(message as CompleteTxSetMessage)
             else -> {
                 super.sortMessage(message)
             }
         }
     }
-
-    
 
     fun handleInitPartMessage (message: ReviveMessage) {
         if (this.executionId == message.executionId && !this.rebalancingAwake) {
@@ -131,11 +153,11 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
         assert(this.leader === this)
         if (!this.checkMessage(message, false)) { return }
 
-        if (stateMachine.isInState(State.WAITING)) {
+        if (leaderStateMachine.isInState(State.WAITING)) {
             initMessages.add(message)
 
-            if (initMessages.size == this.orderOfStarting!!.size - 1) {
-                stateMachine.state = State.CONFIRMATION
+            if (initMessages.size == this.orderOfStarting!!.size) {
+                leaderStateMachine.state = State.CONFIRMATION
                 for (m in initMessages) {
                     sendMessage(ReviveMessage(MessageTypes.CONFIRM_REQ_REV, this, m.sender, this.executionId!!), true)
                 }
@@ -146,11 +168,10 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
     }
 
     fun handleConfirmReqMessage (message: ReviveMessage) {
-        assert(this.leader !== this)
-        if (!this.checkMessage(message, true)) { return }
+        if (!this.checkMessage(message, this.leader !== this)) { return }
 
-        if (stateMachine.isInState(State.WAITING)) {
-            stateMachine.state = State.CONFIRMATION
+        if (clientStateMachine.isInState(State.WAITING)) {
+            clientStateMachine.state = State.CONFIRMATION
             sendMessage(ReviveMessage(MessageTypes.CONFIRM_REV, this, this.leader!!, this.executionId!!), true)
         }
     }
@@ -159,7 +180,7 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
         assert(this.leader === this)
         if (!this.checkMessage(message, false)) { return }
 
-        if (stateMachine.isInState(State.CONFIRMATION)) {
+        if (leaderStateMachine.isInState(State.CONFIRMATION)) {
             if (message.type === MessageTypes.CONFIRM_REV) {
                 confirmMessages.add(message)
             } else {
@@ -167,7 +188,7 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
             }
 
             if (confirmMessages.size + denyMessages.size == initMessages.size) {
-                stateMachine.state = State.COLLECTION
+                leaderStateMachine.state = State.COLLECTION
                 this.roundParticipants = confirmMessages.map { m -> m.sender }
 
                 for (m in confirmMessages) {
@@ -178,11 +199,10 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
     }
 
     fun handleRoundConfirmMessage (message: StartRoundMessage) {
-        assert(this.leader !== this)
-        if (!this.checkMessage(message, true)) { return }
+        if (!this.checkMessage(message, this.leader !== this)) { return }
         
-        if (stateMachine.isInState(State.CONFIRMATION)) {
-            stateMachine.state = State.COLLECTION
+        if (clientStateMachine.isInState(State.CONFIRMATION)) {
+            clientStateMachine.state = State.COLLECTION
 
             this.channelsToRebalance = outgoingDemandEdges.union(incomingDemandEdges)
             this.roundParticipants = message.participants
@@ -200,11 +220,11 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
         assert(this.leader === this)
         if (!this.checkMessage(message, false)) { return }
 
-        if (stateMachine.isInState(State.COLLECTION)) {
+        if (leaderStateMachine.isInState(State.COLLECTION)) {
             demandMessages.add(message)
 
             if (demandMessages.size == confirmMessages.size) {
-                stateMachine.state = State.SIGNING
+                leaderStateMachine.state = State.SIGNING
 
                 val (channelDemands, channels) = generateTxSet(demandMessages)
                 val transactions = createTransactions(channelDemands, channels)
@@ -227,6 +247,7 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
 
             for (i in 0 until allChannels.size) {
                 solver.setColName(i + 1, allChannels[i].id.toString())
+                solver.setInt(i + 1, true)
             }
 
             solver.setAddRowmode(true)
@@ -275,10 +296,15 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
 
             solver.solve()
 
-            println("Value of objective function: " + solver.getObjective())
+            logger.debug("Value of objective function: " + solver.getObjective())
             val pointerVariables = solver.getPtrVariables()
-            for (i in 0 until pointerVariables.size) {
-                println("Value of var[$i] = ${pointerVariables[i]} -> ${allChannels[i]}")
+
+            if (pointerVariables.size <= 20) {
+                for (i in 0 until pointerVariables.size) {
+                    logger.debug("Value of var[$i] = ${pointerVariables[i]} -> ${allChannels[i]}")
+                }
+            } else {
+                logger.debug("Too many variables to print!")
             }
 
             solver.deleteLp()
@@ -302,31 +328,28 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
                 from = temp
             }
             val tx = ChannelTransaction(SeededRandom.getRandomUUID(), channelDemands[i].toInt(), from, to, SeededRandom.getRandomUUID(), channels[i])
-            transactions += tx
+            if (tx.amount > 0) { transactions += tx }
         }
 
         return transactions
     }
 
     fun handleSigningTxSetRequestMessage (message: SigningRequestMessage) {
-        assert(this.leader !== this)
-        if (!this.checkMessage(message, true)) { return }
+        if (!this.checkMessage(message, this.leader !== this)) { return }
 
+        if (clientStateMachine.isInState(State.COLLECTION)) {
+            clientStateMachine.state = State.SIGNING
+        } else { throw IllegalStateException("Expected to be in state COLLECTION when starting to sign!") }
+        
         logger.debug("Starting checking transaction set")
 
-        if (stateMachine.isInState(State.COLLECTION)) {
-            stateMachine.state = State.SIGNING
-        } else { throw IllegalStateException("Expected to be in state COLLECTION when starting to sign!") }
-
         var totalBalance = 0
-        val myTransactions: MutableList<ChannelTransaction> = ArrayList()
         for (transaction in message.transactions) {
             if (transaction.from == this) {
                 totalBalance -= transaction.amount
-                myTransactions += transaction
+                this.myTransactions.add(transaction)
             } else if (transaction.to == this) {
                 totalBalance += transaction.amount
-                myTransactions += transaction
             }
         }
         if (totalBalance != 0) { throw IllegalStateException("$this will lose/gain $totalBalance from this rebalancing!") }
@@ -336,10 +359,65 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
             throw IllegalStateException("$this cannot reconstruct the Merkle tree from the given transactions!")
         }
 
-        for (transaction in myTransactions) {
+        for (transaction in this.myTransactions) {
             transaction.channel.requestTx(transaction, null, true)
         }
         
         sendMessage(SignedTxSetMessage(MessageTypes.SIGNED_TX_SET_REV, this, this.leader!!, this.executionId!!, Signature(this, message.digest)), true)
+    }
+
+    fun handleSignedTxSetMessage (message: SignedTxSetMessage) {
+        assert(this.leader === this)
+        if (!this.checkMessage(message, false)) { return }
+
+        if (!leaderStateMachine.isInState(State.SIGNING)) {
+            throw IllegalStateException("$this did not expect to be in State.SIGNING!")
+        }
+
+        signatures.add(message.signature)
+
+        if (signatures.size == this.roundParticipants.size) {
+            // Check signatures
+            for (signature in signatures) {
+                if (signature.signer !in this.roundParticipants) {
+                    throw IllegalStateException("Signature $signature was not signed by a round participant!")
+                }
+                if (signature.data != signatures[0].data) {
+                    throw IllegalStateException("Signature $signature was not equal to the other received signatures!")
+                }
+            }
+
+            for (node in this.roundParticipants) {
+                sendMessage(CompleteTxSetMessage(MessageTypes.COMPLETE_TX_SET_REV, this, node, this.executionId!!, signatures[0].data, signatures), true)
+            }
+        }
+    }
+
+    fun handleCompleteTxSetMessage (message: CompleteTxSetMessage) {
+        if (!this.checkMessage(message, this.leader !== this)) { return }
+
+        for (signature in message.signatures) {
+            if (signature.signer !in this.roundParticipants) {
+                throw IllegalStateException("Signature $signature was not signed by a round participant!")
+            }
+        }
+
+        for (transaction in this.myTransactions) {
+            transaction.channel.executeTx(transaction)
+            transaction.channel.unlock()
+        }
+
+        terminateRebalancing(true)
+    }
+
+    fun terminateRebalancing(success: Boolean) {
+        if (success) {
+            logger.info("Finished rebalancing successfully")
+        } else {
+            logger.info("Terminated rebalancing unsuccessfully")
+        }
+
+        this.resetRunVars()
+        this.reset()
     }
 }

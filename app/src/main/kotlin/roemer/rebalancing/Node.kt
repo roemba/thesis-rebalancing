@@ -85,6 +85,7 @@ open class Node(val id: Int, val g: ChannelNetwork) {
             MessageTypes.REQ_TX, MessageTypes.EXEC_TX, MessageTypes.ABORT_TX -> this.numberOfTransactionMessages++
             MessageTypes.INVITE_P, MessageTypes.ACCEPT_P, MessageTypes.FINISH_P, MessageTypes.DENY_P -> this.numberOfParticipantMessages++
             MessageTypes.COMMIT_R, MessageTypes.REQUEST_R, MessageTypes.SUCCESS_R, MessageTypes.UPDATE_R, MessageTypes.FAIL_R, MessageTypes.EXEC_R, MessageTypes.NEXT_ROUND_R -> this.numberOfRebalancingMessages++
+            MessageTypes.FAIL_REV, MessageTypes.DENY_REV, MessageTypes.INIT_REV, MessageTypes.CONFIRM_REQ_REV, MessageTypes.CONFIRM_REV, MessageTypes.ROUND_CONFIRM_REV, MessageTypes.DEMAND_REV, MessageTypes.TX_SET_REV, MessageTypes.SIGNED_TX_SET_REV, MessageTypes.COMPLETE_TX_SET_REV -> this.numberOfRebalancingMessages++
             else -> {
                 logger.error("Cannot count ${message.type}")
             }
@@ -152,7 +153,7 @@ open class Node(val id: Int, val g: ChannelNetwork) {
         sortMessage(message)
 
         this.stopMessageSending()
-        return Pair(sendingList, startStopDesc)
+        return SimulationInput(this, sendingList, startStopDesc)
     }
 
     open fun sortMessage(message: Message) {

@@ -20,7 +20,7 @@ A graph consists of `Node`s, which hold a `Queue` that receives messages from ot
 ## TODOs
 
 - ~~Debug CoinWasherNode~~
-- Finish and debug ReviveNode
+- ~~Finish and debug ReviveNode~~
 - Improve delays by using an actual latency model
 - Generate balances and transactions using a model instead of using a random generator
 - Setup proper testing

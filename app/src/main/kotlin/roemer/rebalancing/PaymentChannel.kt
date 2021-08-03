@@ -43,7 +43,7 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
         }
 
         if (tx in pendingTransactions) {
-            return true
+            throw IllegalArgumentException("Transaction $tx has already been requested!")
         }
 
         var newBalance1 = this.pendingBalance1
@@ -58,8 +58,7 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
         }
 
         if (newBalance1 < 0 || newBalance2 < 0) {
-            println("Channel $this has insufficient balance for the transaction $tx")
-            return false
+            throw IllegalStateException("Channel $this has insufficient balance for the transaction $tx")
         }
 
         this.pendingBalance1 = newBalance1
@@ -77,10 +76,9 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
 
     fun executeTx(tx: Transaction, htlc: ByteArray? = null): Boolean {
         if (tx !in pendingTransactions) {
-            return false
+            throw IllegalArgumentException("Transaction $tx was never requested!")
         } else if (tx in htlcTransactions && (htlc == null || !(htlcTransactions.get(tx) contentEquals htlc))) {
-            println("Incorrect htlc was provided to execute transaction!")
-            return false
+            throw IllegalArgumentException("Incorrect htlc was provided to execute transaction $tx!")
         }
 
         if (tx.from === this.node1) {

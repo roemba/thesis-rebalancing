@@ -143,7 +143,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         this.wakeUp()
 
         this.stopMessageSending()
-        return Pair(this.sendingList, this.startStopDesc)
+        return SimulationInput(this, this.sendingList, this.startStopDesc)
     }
 
     fun startRound() {

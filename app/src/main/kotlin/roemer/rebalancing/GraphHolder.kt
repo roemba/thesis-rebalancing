@@ -91,6 +91,7 @@ class GraphHolder {
     fun start (algoSettings: Map<String, Any>) {
         // Statistics and logging
         saveChannelBalances()
+        printChannelBalances()
 
         // Discrete event simulation
         var now = 0L
@@ -99,7 +100,7 @@ class GraphHolder {
         val latestArrivalTimePerChannel: MutableMap<PaymentChannel, Long> = HashMap()
 
         while (!started || eventQueue.isNotEmpty()) {
-            var simulInput: SimulationInput = Pair(ArrayList(), null)
+            var simulInput: SimulationInput? = null
             if (!started) {
                 val startNode = nodes[0]
                 when (this.nodeType) {
@@ -118,7 +119,10 @@ class GraphHolder {
                 } else if (event is StartStopEvent) {
                     if (event.desc.recipient != null && !event.desc.start && event.desc.algorithm == Algorithm.ParticipantDisc) {
                         when (this.nodeType) {
-                            NodeTypes.CoinWasher, NodeTypes.Revive -> simulInput = (event.desc.recipient as Rebalancer).rebalance(event) 
+                            NodeTypes.CoinWasher, NodeTypes.Revive -> simulInput = (event.desc.recipient as Rebalancer).rebalance(event)
+                            else -> {
+                                throw IllegalStateException("Do not know how to handle event $event")
+                            } 
                         }     
                     }
                 } else {
@@ -126,24 +130,30 @@ class GraphHolder {
                 }
             }
 
-            for (message in simulInput.first) {
-                var eventTime: Long
-
-                // Ensure the messages are always ordered in time
-                if (message is ChannelMessage) {
-                    val latestArrivalTime = max(latestArrivalTimePerChannel.getOrDefault(message.channel, now), now)
-                    eventTime = latestArrivalTime + this.getMessageDelay()
-                    
-                    latestArrivalTimePerChannel.put(message.channel, eventTime)
-                } else {
-                    eventTime = now + this.getMessageDelay()
+            if (simulInput != null) {
+                for (message in simulInput.messages) {
+                    var eventTime: Long
+    
+                    // Ensure the messages are always ordered in time
+                    if (message is ChannelMessage) {
+                        val latestArrivalTime = max(latestArrivalTimePerChannel.getOrDefault(message.channel, now), now)
+                        eventTime = latestArrivalTime + this.getMessageDelay()
+                        
+                        latestArrivalTimePerChannel.put(message.channel, eventTime)
+                    } else {
+                        if (message.recipient === message.sender) { // When sending a message to yourself
+                            eventTime = now + 1L
+                        } else {
+                            eventTime = now + this.getMessageDelay()
+                        }
+                    }
+    
+                    eventQueue.add(MessageEvent(eventTime, message))
                 }
-
-                eventQueue.add(MessageEvent(eventTime, message))
-            }
-
-            if (simulInput.second != null) {
-                eventQueue.add(StartStopEvent(now + 1, simulInput.second!!))
+    
+                if (simulInput.startStopDes != null) {
+                    eventQueue.add(StartStopEvent(now + 1, simulInput.startStopDes!!))
+                }
             }
         }
 
@@ -206,8 +216,11 @@ class GraphHolder {
                 oldSum += channelBalances.get(Pair(node, channel))!!
                 newSum += channel.getBalance(node)
             }
-
-            assert(oldSum == newSum)
+            
+            if (oldSum != newSum) {
+                printChannelBalances()
+                throw IllegalStateException("$node used to have a total balance of $oldSum but now has a balance of $newSum while they should be equal!")
+            }
         }
     }
 

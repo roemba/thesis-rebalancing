@@ -67,3 +67,17 @@ class SignedTxSetMessage(
         return "SignedTxSetMessage(type=$type, sender=$sender, recipient=$recipient, signature=$signature)"
     }
 }
+
+class CompleteTxSetMessage(
+    type: MessageTypes,
+    sender: Node,
+    recipient: Node,
+    executionId: Tag,
+    val digest: ByteArray,
+    val signatures: List<Signature>,
+): ReviveMessage(type, sender, recipient, executionId) {
+    override fun toString(): String {
+        return "CompleteTxSetMessage(type=$type, sender=$sender, recipient=$recipient, digest=$digest)"
+    }
+}
+

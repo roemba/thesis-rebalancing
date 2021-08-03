@@ -56,7 +56,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         }
 
         this.stopMessageSending()
-        return Pair(sendingList, StartStopDescription(true, Algorithm.ParticipantDisc, this))
+        return SimulationInput(this, sendingList, StartStopDescription(true, Algorithm.ParticipantDisc, this))
     } 
 
     fun handleInviteMessage(mes: InviteParticipantMessage) {
