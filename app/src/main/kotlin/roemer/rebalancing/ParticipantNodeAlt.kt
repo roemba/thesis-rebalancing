@@ -13,6 +13,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
     var anonId: Tag? = null
     var participants: MutableSet<Tag> = HashSet()
     var edgesThatAcceptedInvite: MutableSet<PaymentChannel> = HashSet()
+    var childEdges: MutableSet<PaymentChannel> = HashSet()
     var parentEdge: PaymentChannel? = null
     var invitedEdges: MutableSet<PaymentChannel> = HashSet()
     var nOfExpectedResponses = 0
@@ -88,7 +89,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
             if (mes.hopCount - 1 == 0) {
                 this.awake = true
                 edgesIAccepted.add(mes.channel)
-                return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants))
+                return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants, true))
             }
             
             // If not awake, propagate invite to other channels
@@ -113,13 +114,13 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
 
             if ((this.paymentChannels.size - deniedEdges.size) == 1) {
                 edgesIAccepted.add(mes.channel)
-                return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants))
+                return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants, true))
             }
         }
 
         if (mes.channel !== parentEdge) {
             edgesIAccepted.add(mes.channel)
-            return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants))
+            return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants, false))
         }
     }
 
@@ -140,6 +141,10 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         val senderChannel = mes.channel
         invitedEdges.remove(senderChannel)
         edgesThatAcceptedInvite.add(senderChannel)
+        
+        if (mes.parent) {
+            childEdges.add(senderChannel)
+        }
 
         handleResponses()
     }
@@ -156,6 +161,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         
         invitedEdges.remove(mes.channel)
         edgesThatAcceptedInvite.remove(mes.channel)
+        childEdges.remove(mes.channel)
         edgesIAccepted.remove(mes.channel)
 
         handleResponses()
@@ -185,13 +191,13 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
             if (invitedEdges.isEmpty()) {
                 if (this.edgesThatAcceptedInvite.isNotEmpty()) {
                     if (this.started) {
-                        for (channel in this.edgesThatAcceptedInvite) {
+                        for (channel in this.childEdges) {
                             sendMessage(FinishParticipantMessage(MessageTypes.FINISH_P, this, channel.getOppositeNode(this), channel, executionId!!, participants))
                         }
                         return terminate(true)
                     } else {
                         edgesIAccepted.add(parentEdge!!)
-                        sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, parentEdge!!.getOppositeNode(this), parentEdge!!, executionId!!, participants))
+                        sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, parentEdge!!.getOppositeNode(this), parentEdge!!, executionId!!, participants, true))
                     }
                 } else {
                     denyAndTerminate("Did not receive any accepts")
@@ -208,8 +214,8 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         }
 
         participants = mes.participants.toMutableSet()
-
-        for (channel in this.edgesThatAcceptedInvite) {
+	
+        for (channel in this.childEdges) {
             if (channel != mes.channel) {
                 sendMessage(FinishParticipantMessage(MessageTypes.FINISH_P, this, channel.getOppositeNode(this), channel, executionId!!, participants))
             }
@@ -243,6 +249,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         anonId = null
         participants  = HashSet()
         edgesThatAcceptedInvite = HashSet()
+        childEdges = HashSet()
         edgesIAccepted = HashSet()
         invitedEdges = HashSet()
         parentEdge = null

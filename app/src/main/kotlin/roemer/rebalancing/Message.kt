@@ -94,10 +94,11 @@ open class AcceptParticipantMessage(
     recipient: Node,
     channel: PaymentChannel,
     executionId: Tag,
-    val participants: Set<Tag>
+    val participants: Set<Tag>,
+    val parent: Boolean,
 ): ParticipantMessage(type, sender, recipient, channel, executionId) {
     override fun toString(): String {
-        return "AcceptParticipantMessage(sender=$sender, recipient=$recipient, executionId=$executionId, channel=${channel.id})"//, participants=$participants)"
+        return "AcceptParticipantMessage(sender=$sender, recipient=$recipient, executionId=$executionId, channel=${channel.id}, parent=${parent})"//, participants=$participants)"
     }
 }
 
@@ -107,8 +108,8 @@ class FinishParticipantMessage(
     recipient: Node,
     channel: PaymentChannel,
     executionId: Tag,
-    participants: Set<Tag>
-): AcceptParticipantMessage(type, sender, recipient, channel, executionId, participants) {
+    val participants: Set<Tag>
+): ParticipantMessage(type, sender, recipient, channel, executionId) {
     override fun toString(): String {
         return "FinishParticipantMessage(sender=$sender, recipient=$recipient, executionId=$executionId)"//, participants=$participants)"
     }
