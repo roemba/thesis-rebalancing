@@ -84,8 +84,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
             this.algoSettings = mes.algoSettings
             anonId = Tag.createTag(this)
             participants.add(anonId!!)
-            parentEdge = mes.channel
-            logger.info("Claimed by execution id: $executionId using participant id: $anonId, parentEdge: $parentEdge")
+            logger.info("Claimed by execution id: $executionId using participant id: $anonId")
         }
 
         // If hop count is 0, terminate search
@@ -98,6 +97,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         val maxNumberOfInvites = this.algoSettings["maxNumberOfInvites"] as Int
         if (!this.invitesSend) {
             this.invitesSend = true
+            parentEdge = mes.channel
             for (channel in this.paymentChannels) {
                 if (channel !== parentEdge && !(channel in deniedEdges)) {
                     sendMessage(InviteParticipantMessage(
@@ -112,12 +112,11 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
                 }
             }
             logger.debug("Invited $nOfExpectedResponses edges")
-        }
-
-        if (mes.channel !== parentEdge) {
-            edgesIAccepted.add(mes.channel)
-            return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants, false))
-        }
+            return
+        } 
+            
+        edgesIAccepted.add(mes.channel)
+        return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants, false))
     }
 
     fun handleAcceptMessage(mes: AcceptParticipantMessage) {
@@ -226,7 +225,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
             // End result: participants and acceptedEdges, do not reset yet
             logger.info("Finished with participants size: ${participants.size}")
             if (!(this.anonId in participants)) {
-                logger.error("I have not been put up in the participants list!")
+                throw IllegalStateException("I have not been put up in the participants list!")
             }
             
             result = ParticipantFindingResult(executionId!!, participants.toSet(), edgesThatAcceptedInvite.plus(edgesIAccepted))
