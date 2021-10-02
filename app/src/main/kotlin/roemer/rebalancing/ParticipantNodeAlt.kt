@@ -84,20 +84,15 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
             this.algoSettings = mes.algoSettings
             anonId = Tag.createTag(this)
             participants.add(anonId!!)
+            parentEdge = mes.channel
             logger.info("Claimed by execution id: $executionId using participant id: $anonId")
         }
 
-        // If hop count is 0, terminate search
-        if (mes.hopCount - 1 == 0 || (this.paymentChannels.size - deniedEdges.size) == 1) {
-            edgesIAccepted.add(mes.channel)
-            return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants, true))
-        }
-
         // If not send invites yet, propagate invite to other channels
-        val maxNumberOfInvites = this.algoSettings["maxNumberOfInvites"] as Int
-        if (!this.invitesSend) {
+        if (!this.invitesSend && mes.hopCount - 1 != 0 && (this.paymentChannels.size - deniedEdges.size) != 1) {
             this.invitesSend = true
             parentEdge = mes.channel
+            val maxNumberOfInvites = this.algoSettings["maxNumberOfInvites"] as Int
             for (channel in this.paymentChannels) {
                 if (channel !== parentEdge && !(channel in deniedEdges)) {
                     sendMessage(InviteParticipantMessage(
@@ -116,7 +111,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         } 
             
         edgesIAccepted.add(mes.channel)
-        return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants, false))
+        return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants, parentEdge == mes.channel))
     }
 
     fun handleAcceptMessage(mes: AcceptParticipantMessage) {
