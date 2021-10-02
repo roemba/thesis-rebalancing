@@ -86,37 +86,32 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
             participants.add(anonId!!)
             parentEdge = mes.channel
             logger.info("Claimed by execution id: $executionId using participant id: $anonId, parentEdge: $parentEdge")
-        
-            // If hop count is 0, terminate search
-            if (mes.hopCount - 1 == 0) {
-                edgesIAccepted.add(mes.channel)
-                return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants, true))
-            }
-            
-            // If not send invites yet, propagate invite to other channels
-            val maxNumberOfInvites = this.algoSettings["maxNumberOfInvites"] as Int
-            if (!this.invitesSend) {
-                this.invitesSend = true
-                for (channel in this.paymentChannels) {
-                    if (channel !== parentEdge && !(channel in deniedEdges)) {
-                        sendMessage(InviteParticipantMessage(
-                            MessageTypes.INVITE_P, this, channel.getOppositeNode(this), channel, executionId!!, mes.hopCount - 1, this.algoSettings
-                        ))
-                        invitedEdges.add(channel)
-                        nOfExpectedResponses++
+        }
 
-                        if (invitedEdges.size >= maxNumberOfInvites) {
-                            break
-                        }
+        // If hop count is 0, terminate search
+        if (mes.hopCount - 1 == 0 || (this.paymentChannels.size - deniedEdges.size) == 1) {
+            edgesIAccepted.add(mes.channel)
+            return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants, true))
+        }
+
+        // If not send invites yet, propagate invite to other channels
+        val maxNumberOfInvites = this.algoSettings["maxNumberOfInvites"] as Int
+        if (!this.invitesSend) {
+            this.invitesSend = true
+            for (channel in this.paymentChannels) {
+                if (channel !== parentEdge && !(channel in deniedEdges)) {
+                    sendMessage(InviteParticipantMessage(
+                        MessageTypes.INVITE_P, this, channel.getOppositeNode(this), channel, executionId!!, mes.hopCount - 1, this.algoSettings
+                    ))
+                    invitedEdges.add(channel)
+                    nOfExpectedResponses++
+
+                    if (invitedEdges.size >= maxNumberOfInvites) {
+                        break
                     }
                 }
-                logger.debug("Invited $nOfExpectedResponses edges")
             }
-
-            if ((this.paymentChannels.size - deniedEdges.size) == 1) {
-                edgesIAccepted.add(mes.channel)
-                return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants, true))
-            }
+            logger.debug("Invited $nOfExpectedResponses edges")
         }
 
         if (mes.channel !== parentEdge) {
