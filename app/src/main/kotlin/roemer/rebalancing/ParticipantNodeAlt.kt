@@ -89,7 +89,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         }
 
         // If not send invites yet, propagate invite to other channels
-        if (!this.invitesSend && mes.hopCount - 1 != 0 && (this.paymentChannels.size - deniedEdges.size) != 1) {
+        if (!this.invitesSend && mes.hopCount - 1 > 0 && (this.paymentChannels.size - deniedEdges.size) > 1) {
             this.invitesSend = true
             parentEdge = mes.channel
             val maxNumberOfInvites = this.algoSettings["maxNumberOfInvites"] as Int
@@ -157,14 +157,6 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         handleResponses()
     }
 
-    fun denyAndTerminate (reason: String) {
-        if (!this.started) { 
-            sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, parentEdge!!.getOppositeNode(this), parentEdge!!, executionId!!)) 
-        }
-
-        terminate(false, reason)
-    }
-
     fun handleResponses() {
         nOfExpectedResponses--
         // if (nOfExpectedResponses < 5) {
@@ -173,24 +165,22 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         //     }
         // }
 
-
         if (nOfExpectedResponses == 0 && !sendFinalList) {
             sendFinalList = true
             // logger.debug("nOfInvitedEdges: ${this.invitedEdges.size} nOfAcceptedEdges: ${this.edgesThatAcceptedInvite.size}")
 
             if (invitedEdges.isEmpty()) {
-                if (this.edgesThatAcceptedInvite.isNotEmpty()) {
-                    if (this.started) {
-                        for (channel in this.childEdges) {
-                            sendMessage(FinishParticipantMessage(MessageTypes.FINISH_P, this, channel.getOppositeNode(this), channel, executionId!!, participants))
-                        }
-                        return terminate(true)
-                    } else {
-                        edgesIAccepted.add(parentEdge!!)
-                        sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, parentEdge!!.getOppositeNode(this), parentEdge!!, executionId!!, participants, true))
+                if (this.started) {
+                    if (this.edgesThatAcceptedInvite.isEmpty()) {
+                        terminate(false, "As starter, I did not receive any ACCEPTs!")
                     }
+                    for (channel in this.childEdges) {
+                        sendMessage(FinishParticipantMessage(MessageTypes.FINISH_P, this, channel.getOppositeNode(this), channel, executionId!!, participants))
+                    }
+                    return terminate(true)
                 } else {
-                    denyAndTerminate("Did not receive any accepts")
+                    edgesIAccepted.add(parentEdge!!)
+                    sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, parentEdge!!.getOppositeNode(this), parentEdge!!, executionId!!, participants, true))
                 }
             }
         }
