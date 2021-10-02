@@ -32,3 +32,8 @@ build/
 app/visualisation/
 
 log*.txt
+
+app/bin/
+.project
+.classpath
+.settings/

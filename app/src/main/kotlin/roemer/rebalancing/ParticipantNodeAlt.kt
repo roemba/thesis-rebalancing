@@ -9,6 +9,7 @@ data class ParticipantFindingResult (
 open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolean = false) : Node(id, g) {
     var awake = false
     var started = false
+    var invitesSend = false
     var executionId: Tag? = null
     var anonId: Tag? = null
     var participants: MutableSet<Tag> = HashSet()
@@ -78,6 +79,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
 
         // If not already claimed or finished, become claimed
         if (executionId == null && result == null) {
+            this.awake = true
             executionId = mes.executionId
             this.algoSettings = mes.algoSettings
             anonId = Tag.createTag(this)
@@ -87,15 +89,14 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         
             // If hop count is 0, terminate search
             if (mes.hopCount - 1 == 0) {
-                this.awake = true
                 edgesIAccepted.add(mes.channel)
                 return sendMessage(AcceptParticipantMessage(MessageTypes.ACCEPT_P, this, mes.sender, mes.channel, executionId!!, participants, true))
             }
             
-            // If not awake, propagate invite to other channels
+            // If not send invites yet, propagate invite to other channels
             val maxNumberOfInvites = this.algoSettings["maxNumberOfInvites"] as Int
-            if (!this.awake) {
-                this.awake = true
+            if (!this.invitesSend) {
+                this.invitesSend = true
                 for (channel in this.paymentChannels) {
                     if (channel !== parentEdge && !(channel in deniedEdges)) {
                         sendMessage(InviteParticipantMessage(
@@ -245,6 +246,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
     fun reset() {
         awake = false
         started = false
+        invitesSend = false
         executionId = null
         anonId = null
         participants  = HashSet()

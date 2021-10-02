@@ -120,9 +120,7 @@ class GraphHolder {
                     if (event.desc.recipient != null && !event.desc.start && event.desc.algorithm == Algorithm.ParticipantDisc) {
                         when (this.nodeType) {
                             NodeTypes.CoinWasher, NodeTypes.Revive -> simulInput = (event.desc.recipient as Rebalancer).rebalance(event)
-                            else -> {
-                                throw IllegalStateException("Do not know how to handle event $event")
-                            } 
+                            NodeTypes.ParticipantDisc -> {}
                         }     
                     }
                 } else {
