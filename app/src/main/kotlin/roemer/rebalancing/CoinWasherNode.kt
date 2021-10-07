@@ -48,7 +48,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     
     // Needs to be reset every round
     lateinit var roundStateMachine: StateMachine<RoundState>
-    lateinit var roundMessageHistory: MutableList<Message>
     var nOfOutstandingRequests = 0
     lateinit var anonIdChannelMap: MutableMap<Tag, PaymentChannel>
     lateinit var cycleChannelPairsMap: MutableMap<Tag, CycleChannelPair>
@@ -75,7 +74,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
     fun resetRoundVars() {
         roundStateMachine = StateMachine(logger, RoundState.WAIT)
-        roundMessageHistory = ArrayList()
         nOfOutstandingRequests = 0
         anonIdChannelMap = HashMap()
         cycleChannelPairsMap = HashMap()
@@ -301,8 +299,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
         // --- END checks
 
-        roundMessageHistory.add(mes)
-
         // Case when node has no outgoing edges
         if (outgoingDemandEdges.isEmpty()) {
             return sendMessage(FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.NO_SUCCESS, mes.startId, this.executionId))
@@ -377,8 +373,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
         // --- END checks
 
-        roundMessageHistory.add(mes)
-
         if (!roundStateMachine.isInState(RoundState.REQ)) {
             logger.debug("Ignoring update because already in another roundState")
             return
@@ -409,8 +403,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             channelSuccessMessage.add(mes.channel)
         }
 
-        roundMessageHistory.add(mes)
-
         if (roundStateMachine.isInState(RoundState.REQ)) {
             receivedSuccesses.add(mes)
             nOfOutstandingRequests--
@@ -427,8 +419,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         if (mes.reason != FailReason.NO_SUCCESS) {
             return
         }
-
-        roundMessageHistory.add(mes)
 
         if (roundStateMachine.isInState(RoundState.REQ)) {
             nOfOutstandingRequests--
@@ -540,8 +530,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             return sendMessage(checksRes)
         }
         // --- END checks
-
-        roundMessageHistory.add(mes)
 
         if (mes.channel in channelCommitMessage) {
             throw IllegalStateException("$this - Already received commit message on ${mes.channel}")
@@ -675,8 +663,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             throw IllegalStateException("$this - Received a executing message before COM state!")
         }
 
-        roundMessageHistory.add(mes)
-
         if (mes.tag !in tagTransactionMap) {
             if (mes.tag in cycleChannelPairsMap) {
                 logger.debug("Received execution message back for own cycle ${mes.tag}, skipping...")
@@ -712,8 +698,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         val checkAfterWakeRes = this.deferProcessingIfFromFutureRound(mes)
         checkAfterWakeRes?.let { return sendMessage(checkAfterWakeRes) }
         // --- END checks
-
-        roundMessageHistory.add(mes)
 
         if (!forwardedNextRoundMessage) {
             for (channel in (outgoingDemandEdges union incomingDemandEdges)) {
