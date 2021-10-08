@@ -236,7 +236,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     }
 
     fun deferProcessingIfNotFinishedWithPartDisc(mes: RebalancingMessage): Message? {
-        if (this.executionId != null && this.result == null) {
+        if (this.executionId != null && !this.rebalancingAwake) {
             logger.warn("Not finished with part. discovery!")
             return mes // Add message to back of queue to try again later
         }
@@ -290,7 +290,9 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             return sendMessage(checkBeforeWakeRes)
         }
 
-        this.wakeUp()
+        if (!this.rebalancingAwake) {
+            throw IllegalStateException("I should be awake here! ${this.executionId} ${this.result}")
+        }
 
         val checkAfterWake = arrayOf(this::deferProcessingIfFromFutureRound, this::disallowIfFromEarlierRound)
         val checkAfterWakeRes = this.runMultipleMessageCheckingFunc(mes, checkAfterWake)
@@ -306,10 +308,11 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
         if (roundStateMachine.isInState(RoundState.WAIT)) {
             roundStateMachine.state = RoundState.REQ
+            receivedReqTags.addAll(mes.seenSet)
+
             for (channel in outgoingDemandEdges) {
                 val channelAnonId = Tag.createTag(this)
                 anonIdChannelMap[channelAnonId] = channel
-                receivedReqTags.addAll(mes.seenSet)
                 val seenSet = receivedReqTags + channelAnonId
 
                 sendMessage(RequestRebalancingMessage(MessageTypes.REQUEST_R, this, channel.getOppositeNode(this), channel, mes.startId, mes.executionId, seenSet))
@@ -407,11 +410,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             receivedSuccesses.add(mes)
             nOfOutstandingRequests--
 
-            if (nOfOutstandingRequests == 0) {
-                replyToRequests()
-            } else {
-                logger.debug("Waiting for $nOfOutstandingRequests more success responses")
-            }
+            replyToRequests()
         }
     }
 
@@ -424,21 +423,22 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             nOfOutstandingRequests--
             failedChannels.add(mes.channel)
 
-            if (nOfOutstandingRequests == 0) {
-                replyToRequests()
-            }
+            replyToRequests()
         }
     }
 
     fun replyToRequests() {
+        if (nOfOutstandingRequests != 0) {
+            logger.debug("Waiting for $nOfOutstandingRequests more responses")
+            return
+        }
+
         if (!roundStateMachine.isInState(RoundState.REQ)) {
             throw IllegalStateException("$this can only reply if in RoundState.SUC!")
         }
 
-        if (roundStateMachine.isInState(RoundState.REQ)) {
-            roundStateMachine.state = RoundState.SUC
-        }
-
+        roundStateMachine.state = RoundState.SUC
+        
         for (success in receivedSuccesses) {
             for (tagDemandPair in success.tagList) {
                 if (tagDemandPair.tag in cycleChannelPairsMap) { 
