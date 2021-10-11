@@ -102,7 +102,7 @@ class GraphHolder {
         while (!started || eventQueue.isNotEmpty()) {
             var simulInput: SimulationInput? = null
             if (!started) {
-                val startNode = nodes[0]
+                val startNode = nodes[0] // nodes[SeededRandom.random.nextInt(nodes.size)]
                 when (this.nodeType) {
                     NodeTypes.CoinWasher, NodeTypes.Revive -> simulInput = (startNode as Rebalancer).startSubAlgos(algoSettings)
                     NodeTypes.ParticipantDisc -> simulInput = (startNode as ParticipantNodeAlt).findParticipants(algoSettings)
@@ -163,11 +163,13 @@ class GraphHolder {
         var totalNumberOfTransactionMessages = 0
         var totalNumberOfParticipantMessages = 0
         var totalNumberOfRebalancingMessages = 0
+        var totalSpecialCounter = 0
         for (i in 0 until nodes.size) {
             val node = nodes[i] as ParticipantNodeAlt
             totalNumberOfTransactionMessages += node.numberOfTransactionMessages
             totalNumberOfParticipantMessages += node.numberOfParticipantMessages
             totalNumberOfRebalancingMessages += node.numberOfRebalancingMessages
+            totalSpecialCounter += node.specialCounter
             
             if (node.awake) {
                 println("$node is still doing part discovery")
@@ -188,6 +190,7 @@ class GraphHolder {
         println("Total # of participant messages: $totalNumberOfParticipantMessages")
         println("Total # of rebalancing messages: $totalNumberOfRebalancingMessages")
         println("Total # of messages: ${totalNumberOfTransactionMessages + totalNumberOfParticipantMessages + totalNumberOfRebalancingMessages}")
+        println("Special counter: ${totalSpecialCounter}")
 
         printChannelBalances()
 

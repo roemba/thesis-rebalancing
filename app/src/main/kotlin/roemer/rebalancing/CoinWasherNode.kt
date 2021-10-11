@@ -482,33 +482,27 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         val P: MutableMap<PaymentChannel, Pair<MutableList<TagDemandHTLCPair>, MutableMap<Tag, Transaction>>> = HashMap()
         for (entry in cycleChannelPairsMap.entries) {
             if (!entry.value.completed) {
-                logger.debug("Cycle ${entry.key} not complete, skipping...")
-                nOfIgnoredCycles++
-                continue
+                throw IllegalStateException("It should be impossible for the source to obtain an incomplete cycle!")
             }
 
-            val pairs = P.getOrPut(entry.value.startChannel, { Pair(ArrayList(), HashMap()) })
-
-            var htlc: ByteArray? = null
             if (entry.value.demand > 0) {
                 val preImage = UUID.randomUUID().toString()
                 htlcMap[entry.key] = preImage
     
-                htlc = digest.digest(preImage.encodeToByteArray())
+                val htlc = digest.digest(preImage.encodeToByteArray())
                 val tx = Transaction(UUID.randomUUID(), entry.value.demand, this, entry.value.startChannel.getOppositeNode(this))
                 
                 logger.debug("Source: Requesting tx on ${entry.key}")
                 if (!entry.value.startChannel.requestTx(tx, htlc, true)) {
                     throw IllegalStateException("$this - Channel did not allow me to request TX!")
                 }
-
+                
+                val pairs = P.getOrPut(entry.value.startChannel, { Pair(ArrayList(), HashMap()) })
+                pairs.first += TagDemandHTLCPair(entry.key, entry.value.demand, htlc)
                 pairs.second[entry.key] = tx
             }
-
-            
-            pairs.first += TagDemandHTLCPair(entry.key, entry.value.demand, htlc)
-            
         }
+
         for (channel in this.getChannelsThatRepliedWithSuccess()) {
             if (channel in P) {
                 sendMessage(CommitRebalancingMessage(MessageTypes.COMMIT_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), this.executionId!!, P.get(channel)!!.first, P.get(channel)!!.second))
@@ -517,7 +511,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             }
         }
 
-        if (receivedRequests.size + cycleChannelPairsMap.size - nOfIgnoredCycles == 0) { // If no requests and cycles exist including the source, continue to nextRound
+        if (cycleChannelPairsMap.isEmpty()) { // If no cycles exist, continue to nextRound
             nextRound()
         }
     }

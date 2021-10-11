@@ -17,6 +17,7 @@ open class Node(val id: Int, val g: ChannelNetwork) {
     var numberOfTransactionMessages = 0
     var numberOfParticipantMessages = 0
     var numberOfRebalancingMessages = 0
+    var specialCounter = 0
 
     var sendingList: MutableList<Message> = ArrayList()
     var startStopDesc: StartStopDescription? = null
