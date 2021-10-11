@@ -60,7 +60,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     lateinit var htlcMap: MutableMap<Tag, String>
     lateinit var tagTransactionMap: MutableMap<Tag, Pair<PaymentChannel, Transaction>>
     lateinit var sentSuccessChannel: MutableSet<PaymentChannel>
-    var nOfIgnoredCycles = 0
     var forwardedNextRoundMessage = false
     var executionSafe = false
     lateinit var failedChannels: MutableSet<PaymentChannel>
@@ -86,7 +85,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         htlcMap = HashMap()
         tagTransactionMap = HashMap()
         sentSuccessChannel = HashSet()
-        nOfIgnoredCycles = 0
         forwardedNextRoundMessage = false
         executionSafe = false
         failedChannels = HashSet()
@@ -463,7 +461,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
 
         if (iStartedRound()) {
-            commitSource()
+            commitLeader()
         } else {
             val F = G.entries.toList()
             assert(receivedRequests.isNotEmpty())
@@ -478,11 +476,11 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
     }
 
-    fun commitSource() {
+    fun commitLeader() {
         val P: MutableMap<PaymentChannel, Pair<MutableList<TagDemandHTLCPair>, MutableMap<Tag, Transaction>>> = HashMap()
         for (entry in cycleChannelPairsMap.entries) {
             if (!entry.value.completed) {
-                throw IllegalStateException("It should be impossible for the source to obtain an incomplete cycle!")
+                throw IllegalStateException("It should be impossible for the leader to obtain an incomplete cycle!")
             }
 
             if (entry.value.demand > 0) {
@@ -555,22 +553,20 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                 for (entry in cycleChannelPairsMap.entries) {
                     if (!entry.value.completed) { // Do not give commit for an owned cycle if the cycle tag hasn't made it all the way back to the owner
                         logger.debug("Cycle ${entry.key} not complete, skipping...")
-                        nOfIgnoredCycles++
                         continue
                     }
 
-                    var htlc: ByteArray? = null
                     if (entry.value.demand > 0) {
                         val preImage = UUID.randomUUID().toString()
                         htlcMap[entry.key] = preImage
     
-                        htlc = digest.digest(preImage.encodeToByteArray())
+                        val htlc = digest.digest(preImage.encodeToByteArray())
+
+                        val pairs = K.getOrPut(entry.value.startChannel, { ArrayList() })
+                        pairs += TagDemandHTLCPair(entry.key, entry.value.demand, htlc)
+    
+                        logger.debug("Added cycle with tag ${entry.key} to outgoing commits")
                     }
-
-                    val pairs = K.getOrPut(entry.value.startChannel, { ArrayList() })
-                    pairs += TagDemandHTLCPair(entry.key, entry.value.demand, htlc)
-
-                    logger.debug("Added cycle with tag ${entry.key} to outgoing commits")
                 }
 
                 for (channel in this.getChannelsThatRepliedWithSuccess()) {
@@ -619,7 +615,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                     if (tagDemandPair.tag in commit.tagTxMap) {
                         val preImage = htlcMap[tagDemandPair.tag]!!
                         commit.channel.executeTx(commit.tagTxMap[tagDemandPair.tag]!!, digest.digest(preImage.encodeToByteArray()))
-                        commit.channel.unlock()
                         sendMessage(ExecuteRebalancingMessage(
                             MessageTypes.EXEC_R, this, commit.channel.getOppositeNode(this), commit.channel, this.getRoundStarter(), this.executionId!!,
                             tagDemandPair.tag, preImage
@@ -630,7 +625,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
             checkIfExecutionSafe()
         } else {
-            logger.debug("#ofReceivedCommits: ${receivedCommits.size} #ofReceivedCycleCommits: ${receivedCycleCommits.size} #ofIgnoredCycles: $nOfIgnoredCycles #ofReceivedRequests: ${receivedRequests.size} #ofCycleChannelPairsMap ${cycleChannelPairsMap.size}")
+            logger.debug("#ofReceivedCommits: ${receivedCommits.size} #ofReceivedCycleCommits: ${receivedCycleCommits.size} #ofReceivedRequests: ${receivedRequests.size} #ofCycleChannelPairsMap ${cycleChannelPairsMap.size}")
             val nodesThatStillNeedToCommit = receivedRequests.map {m -> m.sender } - receivedCommits.map {m -> m.sender }
             for (node in nodesThatStillNeedToCommit) {
                 logger.debug("$node still needs to send a commit message")
@@ -669,7 +664,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         val entryValue = tagTransactionMap[mes.tag]!!
         logger.info("Executing ${mes.tag}")
         entryValue.first.executeTx(entryValue.second, digest.digest(mes.preImage.encodeToByteArray()))
-        entryValue.first.unlock()
         sendMessage(ExecuteRebalancingMessage(
             MessageTypes.EXEC_R, this, entryValue.first.getOppositeNode(this), entryValue.first, this.getRoundStarter(), this.executionId!!,
             mes.tag, mes.preImage
@@ -686,7 +680,9 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         val checkBeforeWakeRes = this.runMultipleMessageCheckingFunc(mes, checkBeforeWaking)
         checkBeforeWakeRes?.let { return sendMessage(checkBeforeWakeRes) }
 
-        this.wakeUp()
+        if (!this.rebalancingAwake) {
+            throw IllegalStateException("I should be awake here! ${this.executionId} ${this.result}")
+        }
 
         this.disallowIfFromEarlierRound(mes)?.let { return } // Filter out FailMessages that relate to incorrect round, as this happens often
         val checkAfterWakeRes = this.deferProcessingIfFromFutureRound(mes)
@@ -776,15 +772,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     }
 
     fun nextRound() {
-        // Unlock all incoming edges for normal txs, as those can only be executed by current node
-        for (channel in incomingDemandEdges) {
-            if (channel.hasOngoingTx()) {
-                throw IllegalStateException("Channel $channel is not allowed to be unlocked by $this as it still has ongoing transactions!")
-            }
-            
-            channel.unlock()    
-        }
-
         if (iStartedRound()) {
             for (channel in (outgoingDemandEdges union incomingDemandEdges)) {
                 sendMessage(NextRoundMessage(MessageTypes.NEXT_ROUND_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), executionId!!))
@@ -809,6 +796,15 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     }
 
     fun terminateRebalancing(success: Boolean) {
+        // Unlock all incoming edges for normal txs, as those can only be executed by current node
+        for (channel in incomingDemandEdges) {
+            if (channel.hasOngoingTx()) {
+                throw IllegalStateException("Channel $channel is not allowed to be unlocked by $this as it still has ongoing transactions!")
+            }
+            
+            channel.unlock()    
+        }
+
         if (success) {
             logger.info("Finished rebalancing successfully")
         } else {

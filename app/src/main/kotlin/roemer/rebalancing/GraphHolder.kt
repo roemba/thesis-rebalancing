@@ -99,10 +99,13 @@ class GraphHolder {
         var started = false
         val latestArrivalTimePerChannel: MutableMap<PaymentChannel, Long> = HashMap()
 
+        // Parameters
+        val startNodeIndex = 0 // SeededRandom.random.nextInt(nodes.size)
+
         while (!started || eventQueue.isNotEmpty()) {
             var simulInput: SimulationInput? = null
             if (!started) {
-                val startNode = nodes[0] // nodes[SeededRandom.random.nextInt(nodes.size)]
+                val startNode = nodes[startNodeIndex]
                 when (this.nodeType) {
                     NodeTypes.CoinWasher, NodeTypes.Revive -> simulInput = (startNode as Rebalancer).startSubAlgos(algoSettings)
                     NodeTypes.ParticipantDisc -> simulInput = (startNode as ParticipantNodeAlt).findParticipants(algoSettings)
@@ -160,15 +163,10 @@ class GraphHolder {
         calculateScore()
         var nOfParticipantAwake = 0
         var nOfRebalancingAwake = 0
-        var totalNumberOfTransactionMessages = 0
-        var totalNumberOfParticipantMessages = 0
-        var totalNumberOfRebalancingMessages = 0
         var totalSpecialCounter = 0
+        val nOfParticipants = (nodes[startNodeIndex] as ParticipantNodeAlt).result?.finalParticipants?.size
         for (i in 0 until nodes.size) {
             val node = nodes[i] as ParticipantNodeAlt
-            totalNumberOfTransactionMessages += node.numberOfTransactionMessages
-            totalNumberOfParticipantMessages += node.numberOfParticipantMessages
-            totalNumberOfRebalancingMessages += node.numberOfRebalancingMessages
             totalSpecialCounter += node.specialCounter
             
             if (node.awake) {
@@ -184,13 +182,13 @@ class GraphHolder {
                 }
             }
         }
-        println("Awake participant nodes: $nOfParticipantAwake")
-        println("Awake rebalancing nodes: $nOfRebalancingAwake")
-        println("Total # of tx messages: $totalNumberOfTransactionMessages")
-        println("Total # of participant messages: $totalNumberOfParticipantMessages")
-        println("Total # of rebalancing messages: $totalNumberOfRebalancingMessages")
-        println("Total # of messages: ${totalNumberOfTransactionMessages + totalNumberOfParticipantMessages + totalNumberOfRebalancingMessages}")
+        println("Awake participant nodes: ${nOfParticipantAwake}/${nOfParticipants} ")
+        println("Awake rebalancing nodes: ${nOfRebalancingAwake}/${nOfParticipants}")
         println("Special counter: ${totalSpecialCounter}")
+        println()
+        println("Total time: ${now / 1000L / 60L / 60L} hours or ${now / 1000L / 60L} minutes or ${now / 1000L} seconds")
+        println()
+        MessageCounter.printCounts()
 
         printChannelBalances()
 
