@@ -16,6 +16,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.4.2")
     implementation("org.jgrapht:jgrapht-core:1.5.0")
     implementation("guru.nidi:graphviz-java:0.18.1")
+    implementation("org.apache.commons:commons-math3:3.6.1")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.12.2")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.12.2")
     implementation("com.fasterxml.jackson.module:jackson-module-afterburner:2.12.2")

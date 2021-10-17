@@ -253,6 +253,18 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         return null
     }
 
+    fun generateDeferProcessingIfBeforeState(state: RoundState): KFunction1<RebalancingMessage, Message?> {
+        fun deferProcessingIfBeforeState(mes: RebalancingMessage): Message? { 
+            if (this.roundStateMachine.state < state) {
+                logger.warn("Message is before state $state!")
+                return mes // Add message to back of queue to try again later
+            }
+            return null
+        }
+
+        return ::deferProcessingIfBeforeState
+    }
+
     // ---------- END Message checking functions -------------
 
     fun checkForCycles(mes: RequestRebalancingMessage, seenSetToCheck: Set<Tag>): Boolean {
@@ -367,15 +379,16 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
     fun handleUpdateMessage(mes: UpdateRebalancingMessage) {
         // --- START checks
-        val checks = arrayOf(this::disallowIncorrectExecutionId, this::disallowIfNotRebalancingAwake, this::deferProcessingIfFromFutureRound, this::disallowIfFromEarlierRound)
+        val checks = arrayOf(this::disallowIncorrectExecutionId, this::disallowIfNotRebalancingAwake, this::deferProcessingIfFromFutureRound, 
+            this::disallowIfFromEarlierRound, this.generateDeferProcessingIfBeforeState(RoundState.REQ))
         val checksRes = this.runMultipleMessageCheckingFunc(mes, checks)
         if (checksRes != null) {
             return sendMessage(checksRes)
         }
         // --- END checks
 
-        if (!roundStateMachine.isInState(RoundState.REQ)) {
-            logger.debug("Ignoring update because already in another roundState")
+        if (roundStateMachine.state > RoundState.REQ) {
+            logger.debug("Ignoring update because already in future roundState")
             return
         }
 
@@ -516,7 +529,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
     fun handleCommitMessage(mes: CommitRebalancingMessage) {
         // --- START checks
-        val checks = arrayOf(this::disallowIncorrectExecutionId, this::disallowIfNotRebalancingAwake, this::disallowIfFromDifferentRound)
+        val checks = arrayOf(this::disallowIncorrectExecutionId, this::disallowIfNotRebalancingAwake, this::disallowIfFromDifferentRound, this.generateDeferProcessingIfBeforeState(RoundState.SUC))
         val checksRes = this.runMultipleMessageCheckingFunc(mes, checks)
         if (checksRes != null) {
             return sendMessage(checksRes)
@@ -533,8 +546,8 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             roundStateMachine.state = RoundState.COM
         }
 
-        if (!roundStateMachine.isInState(RoundState.COM)) {
-            return
+        if (roundStateMachine.state > RoundState.COM) {
+            throw IllegalStateException("Received a COMMIT while in a future state! This can never happen")
         }
         
         val cycleEndChannels = cycleChannelPairsMap.values.map { v -> v.endChannel }
@@ -639,16 +652,14 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             return
         }
 
-        val checksRes = this.disallowIncorrectExecutionId(mes)
+        val checks = arrayOf(this::disallowIncorrectExecutionId, this.generateDeferProcessingIfBeforeState(RoundState.EXEC))
+        val checksRes = this.runMultipleMessageCheckingFunc(mes, checks)
         if (checksRes != null) {
             return sendMessage(checksRes)
         }
         // --- END checks
 
-        if (roundStateMachine.isInState(RoundState.COM)) {
-            sendMessage(mes) // Add message to back of queue to try again later
-            return
-        } else if (!roundStateMachine.isInState(RoundState.EXEC)) {
+        if (!roundStateMachine.isInState(RoundState.EXEC)) {
             throw IllegalStateException("$this - Received a executing message before COM state!")
         }
 

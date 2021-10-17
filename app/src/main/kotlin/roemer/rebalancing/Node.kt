@@ -105,6 +105,9 @@ open class Node(val id: Int, val g: ChannelNetwork) {
             var oldUnprocessedMessagesSize = 0
 
             for (mess in copyOfList) {
+                if (this.canLogMessage(mess)) {
+                    logger.debug("Retrying $mess")
+                }
                 sortMessage(mess)
                 if (this.unprocessedMessages.size - oldUnprocessedMessagesSize == 0) { // Message got processed
                     nOfProcessedMessages++

@@ -28,13 +28,12 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
         return this.node1
     }
 
-    fun getEdgeFromNode(vertex: Node): DefaultWeightedEdge {
+    fun getNodeChannelIdentifier(vertex: Node): String {
         if (!(this.isChannelNode(vertex))) {
             throw IllegalArgumentException("The given node does not belong to this channel!")
         }
 
-        if (vertex === this.node1) {return this.edges[0]}
-        return this.edges[1]
+        return "${vertex.hashCode()}-${this.hashCode()}"
     }
 
     fun isChannelNode(vertex: Node): Boolean {

@@ -17,6 +17,8 @@ import guru.nidi.graphviz.engine.Graphviz
 import guru.nidi.graphviz.engine.Format
 import roemer.revive.ReviveNode
 import org.jgrapht.graph.DefaultWeightedEdge
+import org.apache.commons.math3.distribution.ExponentialDistribution
+import org.apache.commons.math3.random.Well19937c
 
 enum class NodeTypes {
     ParticipantDisc, CoinWasher, Revive
@@ -33,6 +35,9 @@ class GraphHolder {
     val nodeType: NodeTypes
     val channelBalances: MutableMap<Pair<Node, PaymentChannel>, Int> = HashMap()
     val channelDemands: MutableMap<PaymentChannel, Int> = HashMap()
+
+    val apacheGenerator = Well19937c(20)
+    val latencyDistribution = ExponentialDistribution(apacheGenerator, 2.0)
 
     constructor (g: ChannelNetwork, nodes: List<Node>, nodeType: NodeTypes) {
         this.g = g
@@ -86,7 +91,8 @@ class GraphHolder {
     }
 
     fun getMessageDelay (): Long {
-        return SeededRandom.random.nextLong(1L, 100L)
+        val delay = ((latencyDistribution.sample() / 10) * 198) + 2
+        return delay.toLong() // SeededRandom.random.nextLong(1L, 200L)
     }
 
     fun start (algoSettings: Map<String, Any>) {
@@ -98,7 +104,7 @@ class GraphHolder {
         var now = 0L
         val eventQueue: Queue<Event> = PriorityQueue()
         var started = false
-        val latestArrivalTimePerEdge: MutableMap<DefaultWeightedEdge, Long> = HashMap()
+        val latestArrivalTimePerNodeChannelID: MutableMap<String, Long> = HashMap()
 
         // Parameters
         val startNodeIndex = 0 // SeededRandom.random.nextInt(nodes.size)
@@ -138,11 +144,11 @@ class GraphHolder {
     
                     // Ensure the messages are always ordered in time
                     if (message is ChannelMessage) {
-                        val edge = message.channel.getEdgeFromNode(message.sender)
-                        val latestArrivalTime = max(latestArrivalTimePerEdge.getOrDefault(edge, now), now)
+                        val id = message.channel.getNodeChannelIdentifier(message.sender)
+                        val latestArrivalTime = max(latestArrivalTimePerNodeChannelID.getOrDefault(id, now), now)
                         eventTime = latestArrivalTime + this.getMessageDelay()
                         
-                        latestArrivalTimePerEdge.put(edge, eventTime)
+                        latestArrivalTimePerNodeChannelID.put(id, eventTime)
                     } else {
                         if (message.recipient === message.sender) { // When sending a message to yourself
                             eventTime = now + 1L
