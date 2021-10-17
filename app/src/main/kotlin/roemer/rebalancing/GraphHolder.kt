@@ -16,6 +16,7 @@ import guru.nidi.graphviz.model.Factory.to as GraphTo
 import guru.nidi.graphviz.engine.Graphviz
 import guru.nidi.graphviz.engine.Format
 import roemer.revive.ReviveNode
+import org.jgrapht.graph.DefaultWeightedEdge
 
 enum class NodeTypes {
     ParticipantDisc, CoinWasher, Revive
@@ -97,7 +98,7 @@ class GraphHolder {
         var now = 0L
         val eventQueue: Queue<Event> = PriorityQueue()
         var started = false
-        val latestArrivalTimePerChannel: MutableMap<PaymentChannel, Long> = HashMap()
+        val latestArrivalTimePerEdge: MutableMap<DefaultWeightedEdge, Long> = HashMap()
 
         // Parameters
         val startNodeIndex = 0 // SeededRandom.random.nextInt(nodes.size)
@@ -137,10 +138,11 @@ class GraphHolder {
     
                     // Ensure the messages are always ordered in time
                     if (message is ChannelMessage) {
-                        val latestArrivalTime = max(latestArrivalTimePerChannel.getOrDefault(message.channel, now), now)
+                        val edge = message.channel.getEdgeFromNode(message.sender)
+                        val latestArrivalTime = max(latestArrivalTimePerEdge.getOrDefault(edge, now), now)
                         eventTime = latestArrivalTime + this.getMessageDelay()
                         
-                        latestArrivalTimePerChannel.put(message.channel, eventTime)
+                        latestArrivalTimePerEdge.put(edge, eventTime)
                     } else {
                         if (message.recipient === message.sender) { // When sending a message to yourself
                             eventTime = now + 1L

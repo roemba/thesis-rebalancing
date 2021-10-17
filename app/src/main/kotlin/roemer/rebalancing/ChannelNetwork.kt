@@ -13,6 +13,9 @@ class ChannelNetwork {
     fun addChannel(vertex1: Node, vertex2: Node, balance1: Int = 0, balance2: Int = 0) {
         val oneToTwoEdge = DefaultWeightedEdge()
         val twoToOneEdge = DefaultWeightedEdge()
+        if (oneToTwoEdge == twoToOneEdge) {
+            throw Exception("Edges are equal!")
+        }
         val cha = PaymentChannel(vertex1, vertex2, arrayOf(oneToTwoEdge, twoToOneEdge), balance1, balance2)
 
         paymentChannelSet.add(cha)
