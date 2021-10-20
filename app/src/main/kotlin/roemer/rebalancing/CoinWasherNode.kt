@@ -604,6 +604,18 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             }
         } else {
             receivedCycleCommits.add(mes)
+
+            // Immediately execute cycle commit
+            for (tagDemandPair in mes.tagList) {
+                if (tagDemandPair.tag in mes.tagTxMap) {
+                    val preImage = htlcMap[tagDemandPair.tag]!!
+                    mes.channel.executeTx(mes.tagTxMap[tagDemandPair.tag]!!, digest.digest(preImage.encodeToByteArray()))
+                    sendMessage(ExecuteRebalancingMessage(
+                        MessageTypes.EXEC_R, this, mes.channel.getOppositeNode(this), mes.channel, this.getRoundStarter(), this.executionId!!,
+                        tagDemandPair.tag, preImage
+                    ))
+                }
+            }
         }
 
         if (receivedCommits.size + receivedCycleCommits.size == receivedRequests.size + cycleChannelPairsMap.size) {
@@ -621,20 +633,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             }
 
             roundStateMachine.state = RoundState.EXEC
-
-            // Execute cycle transactions
-            for (commit in receivedCycleCommits) {
-                for (tagDemandPair in commit.tagList) {
-                    if (tagDemandPair.tag in commit.tagTxMap) {
-                        val preImage = htlcMap[tagDemandPair.tag]!!
-                        commit.channel.executeTx(commit.tagTxMap[tagDemandPair.tag]!!, digest.digest(preImage.encodeToByteArray()))
-                        sendMessage(ExecuteRebalancingMessage(
-                            MessageTypes.EXEC_R, this, commit.channel.getOppositeNode(this), commit.channel, this.getRoundStarter(), this.executionId!!,
-                            tagDemandPair.tag, preImage
-                        ))
-                    }
-                }
-            }
 
             checkIfExecutionSafe()
         } else {
