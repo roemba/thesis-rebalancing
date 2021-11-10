@@ -11,9 +11,13 @@ import org.jgrapht.alg.connectivity.KosarajuStrongConnectivityInspector
 import org.jgrapht.graph.DefaultWeightedEdge
 import roemer.revive.ReviveNode
 
+import org.apache.commons.math3.distribution.ExponentialDistribution
+
 class TopologyTranslator (val nodeFileName: String, val channelFileName: String, val nodeType: NodeTypes) {
     val nodeResourcePath: String
     val channelResourcePath: String
+    val channelCapacityDistribution = ExponentialDistribution(SeededRandom.apacheGenerator, 1.0)
+    val EURO_SATOSHI_EXC_RATE = 1731
 
     init {
         this.nodeResourcePath = this::class.java.classLoader.getResource(nodeFileName)!!.file
@@ -31,7 +35,7 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String,
         val jsonChannels: List<JSONChannel> = mapper.readValue(File(channelResourcePath))
 
 
-        val nodes: MutableList<Node> = ArrayList()
+        var nodes: MutableList<Node> = ArrayList()
         val nodeIdToIndexMap = HashMap<String, Node>()
         val g = ChannelNetwork()
 
@@ -64,17 +68,17 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String,
                 println("Self-loop found!")
             }
 
-            if (SeededRandom.random.nextBoolean()) g.addChannel(srcNode, dstNode, 2, 70) else g.addChannel(srcNode, dstNode, 70, 2)
+            val channelBalance = (channelCapacityDistribution.sample() * EURO_SATOSHI_EXC_RATE).toInt() + (30 * this.EURO_SATOSHI_EXC_RATE)
+            g.addChannel(srcNode, dstNode, channelBalance, channelBalance)
         }
 
         println("Read ${jsonNodes.size} nodes of which $duplicateNodeId were duplicates")
         println("Read ${jsonChannels.size} channels of which $sourceDestNotFound could not be matched to a node src/dst")
-        analysis(g)
-
+        nodes = this.getLargestConnectedComponent(g)
         return Pair(g, nodes)
     }
 
-    fun analysis (g: ChannelNetwork) {
+    fun getLargestConnectedComponent (g: ChannelNetwork): MutableList<Node> {
         val scAlg = KosarajuStrongConnectivityInspector<Node, DefaultWeightedEdge>(g.graph)
         val stronglyConnectedSubgraphs = scAlg.getStronglyConnectedComponents();
 
@@ -82,5 +86,10 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String,
         for (i in 0 until stronglyConnectedSubgraphs.size) {
             println("$i - Size: " + stronglyConnectedSubgraphs[i].vertexSet().size)
         }
+
+        val largestVertexSet = stronglyConnectedSubgraphs.map { graph -> graph.vertexSet() }.maxByOrNull { nodes -> nodes.size }
+        println("Continuing with largest component with ${largestVertexSet!!.size} nodes")
+
+        return largestVertexSet.toMutableList()
     }
 }

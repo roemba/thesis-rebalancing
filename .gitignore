@@ -37,3 +37,5 @@ app/bin/
 .project
 .classpath
 .settings/
+
+.vscode/settings.json

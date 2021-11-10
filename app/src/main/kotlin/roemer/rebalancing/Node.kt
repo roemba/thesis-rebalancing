@@ -15,17 +15,24 @@ open class Node(val id: Int, val g: ChannelNetwork) {
     val logger = Logger(this)
 
     var specialCounter = 0
+    var transactionsCompleted = 0
+    var transactionsRetried = 0
+    var transactionsFailed = 0
 
     var sendingList: MutableList<Message> = ArrayList()
     var startStopDesc: StartStopDescription? = null
     var sendingEnabled = false
     var unprocessedMessages: MutableList<Message> = ArrayList()
 
-    fun startPayment(amount: Int, receiver: Node) {
-        val payment = Payment(this, receiver, amount)
+    fun startPayment(payment: Payment): SimulationInput {
+        if (payment.from != this) {
+            throw IllegalArgumentException("Payment should be starting at node $this !")
+        }
+
+        this.initMessageSending()
 
         val shortestPathDijkstra: DijkstraShortestPath<Node, DefaultWeightedEdge> = DijkstraShortestPath(g.graph)
-        val path = shortestPathDijkstra.getPath(this, receiver)
+        val path = shortestPathDijkstra.getPath(this, payment.to)
 
         
         val toChannel = this.getChannelFromEdge(this.getNextEdgeInPath(path))
@@ -33,15 +40,21 @@ open class Node(val id: Int, val g: ChannelNetwork) {
         val tx = Transaction(payment.paymentId, payment.amount, this, nextNode)
 
         // If commit fails, raise error immediately
-        if (!toChannel.requestTx(tx)) {
-            throw TransactionAbortedException("Insufficient balance in $toChannel!")
+        try {
+            toChannel.requestTx(tx)
+
+            ongoingPayments[payment] = LocalPayment(payment, null, toChannel, tx)
+
+            sendMessage(
+                RequestPaymentMessage(MessageTypes.REQ_TX, this, nextNode, toChannel, payment, path)
+            )
+        } catch (e: IllegalStateException) {
+            this.transactionsFailed++
+            logger.warn("Could not start transaction because $toChannel has insufficient balance for amount ${tx.amount}")
         }
 
-        ongoingPayments[payment] = LocalPayment(payment, null, toChannel, tx)
-
-        sendMessage(
-            RequestPaymentMessage(MessageTypes.REQ_TX, this, nextNode, toChannel, payment, path)
-        )
+        this.stopMessageSending()
+        return SimulationInput(this, sendingList, null)
     }
 
     private fun canLogMessage(message: Message): Boolean {
@@ -165,6 +178,7 @@ open class Node(val id: Int, val g: ChannelNetwork) {
             sendMessage(
                 PaymentMessage(MessageTypes.EXEC_TX, this, mes.sender, mes.channel, mes.payment)
             )
+            return
         }
 
         // Check if payment already known
@@ -181,7 +195,9 @@ open class Node(val id: Int, val g: ChannelNetwork) {
         val tx = Transaction(mes.payment.paymentId, mes.payment.amount, this, nextNode)
 
         // If commit fails, send ABORT to sender of the message
-        if (!toChannel.requestTx(tx)) {
+        try {
+            toChannel.requestTx(tx)
+        } catch (e: IllegalStateException) {
             sendMessage(
                 PaymentMessage(MessageTypes.ABORT_TX, this, previousNode, fromChannel, mes.payment)
             )
@@ -212,6 +228,8 @@ open class Node(val id: Int, val g: ChannelNetwork) {
             sendMessage(
                 PaymentMessage(MessageTypes.EXEC_TX, this, localPayment.fromPaymentChannel.getOppositeNode(this), localPayment.fromPaymentChannel, mes.payment)
             )
+        } else {
+            this.transactionsCompleted++
         }
 
         ongoingPayments.remove(mes.payment)
@@ -234,6 +252,8 @@ open class Node(val id: Int, val g: ChannelNetwork) {
             sendMessage(
                 PaymentMessage(MessageTypes.ABORT_TX, this, localPayment.fromPaymentChannel.getOppositeNode(this), localPayment.fromPaymentChannel, mes.payment)
             )
+        } else {
+            this.transactionsFailed++
         }
 
         ongoingPayments.remove(mes.payment)

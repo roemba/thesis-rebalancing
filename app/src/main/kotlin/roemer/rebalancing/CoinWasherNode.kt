@@ -504,9 +504,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                 val tx = Transaction(UUID.randomUUID(), entry.value.demand, this, entry.value.startChannel.getOppositeNode(this))
                 
                 logger.debug("Source: Requesting tx on ${entry.key}")
-                if (!entry.value.startChannel.requestTx(tx, htlc, true)) {
-                    throw IllegalStateException("$this - Channel did not allow me to request TX!")
-                }
+                entry.value.startChannel.requestTx(tx, htlc, true)
                 
                 val pairs = P.getOrPut(entry.value.startChannel, { Pair(ArrayList(), HashMap()) })
                 pairs.first += TagDemandHTLCPair(entry.key, entry.value.demand, htlc)
@@ -590,9 +588,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
                             if (pair.htlc != null) {
                                 val tx = Transaction(UUID.randomUUID(), pair.demand, this, channel.getOppositeNode(this))
                                 logger.debug("Requesting tx on ${pair.tag}")
-                                if (!channel.requestTx(tx, pair.htlc, true)) {
-                                    throw IllegalStateException("$this - Channel did not allow me to request TX!")
-                                }
+                                channel.requestTx(tx, pair.htlc, true)
                                 tagTxMap[pair.tag] = tx
                             }
                         }

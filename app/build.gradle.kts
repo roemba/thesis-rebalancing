@@ -1,5 +1,7 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
 plugins {
-    id("org.jetbrains.kotlin.jvm") version "1.4.31"
+    kotlin("jvm") version "1.5.31"
     application
 }
 
@@ -13,7 +15,7 @@ repositories {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.4.2")
+    implementation("org.jetbrains.kotlin:kotlin-reflect:1.5.31")
     implementation("org.jgrapht:jgrapht-core:1.5.0")
     implementation("guru.nidi:graphviz-java:0.18.1")
     implementation("org.apache.commons:commons-math3:3.6.1")
@@ -21,6 +23,7 @@ dependencies {
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.12.2")
     implementation("com.fasterxml.jackson.module:jackson-module-afterburner:2.12.2")
     implementation(files("libs/lpsolve55j.jar"))
+    implementation("com.github.sh0nk:matplotlib4j:0.5.0")
     testImplementation(kotlin("test-junit5"))
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.6.0")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.6.0")
@@ -29,6 +32,12 @@ dependencies {
 application {
     mainClass.set("roemer.rebalancing.MainKt")
     applicationDefaultJvmArgs = arguments
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    kotlinOptions { 
+        jvmTarget = "11"
+    }
 }
 
 tasks {

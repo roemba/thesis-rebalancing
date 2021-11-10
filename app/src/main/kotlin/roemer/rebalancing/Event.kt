@@ -40,3 +40,8 @@ data class SimulationInput (
     val messages: List<Message>,
     val startStopDes: StartStopDescription?
 )
+
+class StartPaymentEvent (
+    time: Long,
+    val payments: List<Payment>
+): Event(time)

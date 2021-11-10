@@ -1,9 +1,5 @@
 package roemer.rebalancing
 
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.util.*
 import java.util.PriorityQueue
@@ -18,7 +14,6 @@ import guru.nidi.graphviz.engine.Format
 import roemer.revive.ReviveNode
 import org.jgrapht.graph.DefaultWeightedEdge
 import org.apache.commons.math3.distribution.ExponentialDistribution
-import org.apache.commons.math3.random.Well19937c
 
 enum class NodeTypes {
     ParticipantDisc, CoinWasher, Revive
@@ -36,8 +31,8 @@ class GraphHolder {
     val channelBalances: MutableMap<Pair<Node, PaymentChannel>, Int> = HashMap()
     val channelDemands: MutableMap<PaymentChannel, Int> = HashMap()
 
-    val apacheGenerator = Well19937c(20)
-    val latencyDistribution = ExponentialDistribution(apacheGenerator, 2.0)
+    val latencyDistribution = ExponentialDistribution(SeededRandom.apacheGenerator, 2.0)
+    val maxTransactions = 1000
 
     constructor (g: ChannelNetwork, nodes: List<Node>, nodeType: NodeTypes) {
         this.g = g
@@ -97,7 +92,7 @@ class GraphHolder {
 
     fun start (algoSettings: Map<String, Any>) {
         // Statistics and logging
-        saveChannelBalances()
+        //saveChannelBalances()
         printChannelBalances()
 
         // Discrete event simulation
@@ -105,18 +100,21 @@ class GraphHolder {
         val eventQueue: Queue<Event> = PriorityQueue()
         var started = false
         val latestArrivalTimePerNodeChannelID: MutableMap<String, Long> = HashMap()
+        val txGen = TransactionGenerator(nodes, 1, this.maxTransactions)
+
+        eventQueue.add(txGen.generateTransactions(now))
 
         // Parameters
         val startNodeIndex = 0 // SeededRandom.random.nextInt(nodes.size)
 
         while (!started || eventQueue.isNotEmpty()) {
-            var simulInput: SimulationInput? = null
+            var simulInputs: MutableList<SimulationInput> = ArrayList()
             if (!started) {
-                val startNode = nodes[startNodeIndex]
-                when (this.nodeType) {
-                    NodeTypes.CoinWasher, NodeTypes.Revive -> simulInput = (startNode as Rebalancer).startSubAlgos(algoSettings)
-                    NodeTypes.ParticipantDisc -> simulInput = (startNode as ParticipantNodeAlt).findParticipants(algoSettings)
-                }     
+                // val startNode = nodes[startNodeIndex]
+                // when (this.nodeType) {
+                //     NodeTypes.CoinWasher, NodeTypes.Revive -> simulInput = (startNode as Rebalancer).startSubAlgos(algoSettings)
+                //     NodeTypes.ParticipantDisc -> simulInput = (startNode as ParticipantNodeAlt).findParticipants(algoSettings)
+                // }     
 
                 started = true
             } else {
@@ -125,20 +123,26 @@ class GraphHolder {
                 Logger.time = now
 
                 if (event is MessageEvent) {
-                    simulInput = event.message.recipient.receiveMessage(event.message)
+                    simulInputs.add(event.message.recipient.receiveMessage(event.message))
                 } else if (event is StartStopEvent) {
                     if (event.desc.recipient != null && !event.desc.start && event.desc.algorithm == Algorithm.ParticipantDisc) {
                         when (this.nodeType) {
-                            NodeTypes.CoinWasher, NodeTypes.Revive -> simulInput = (event.desc.recipient as Rebalancer).rebalance(event)
+                            NodeTypes.CoinWasher, NodeTypes.Revive -> simulInputs.add((event.desc.recipient as Rebalancer).rebalance(event))
                             NodeTypes.ParticipantDisc -> {}
                         }     
                     }
+                } else if (event is StartPaymentEvent) {
+                    for (payment in event.payments) {
+                        simulInputs.add(payment.from.startPayment(payment))
+                    }
+                    val simulInput = txGen.generateTransactions(now)
+                    if (simulInput != null) { eventQueue.add(simulInput) }
                 } else {
                     throw IllegalStateException("Event type in queue is unknown!")
                 }
             }
 
-            if (simulInput != null) {
+            for (simulInput in simulInputs) {
                 for (message in simulInput.messages) {
                     var eventTime: Long
     
@@ -161,22 +165,32 @@ class GraphHolder {
                 }
     
                 if (simulInput.startStopDes != null) {
-                    eventQueue.add(StartStopEvent(now + 1, simulInput.startStopDes!!))
+                    eventQueue.add(StartStopEvent(now + 1, simulInput.startStopDes))
                 }
             }
         }
 
         // Statistic and logging
-        checkConservationOfCoins()
-        calculateScore()
+        //checkConservationOfCoins()
+        //calculateScore()
         var nOfParticipantAwake = 0
         var nOfRebalancingAwake = 0
+        var nOfNodesWithOngoingTransactions = 0
+        var nOfTransactionsComplete = 0
+        var nOfTransactionsFailed = 0
         var totalSpecialCounter = 0
         val nOfParticipants = (nodes[startNodeIndex] as ParticipantNodeAlt).result?.finalParticipants?.size
         for (i in 0 until nodes.size) {
             val node = nodes[i] as ParticipantNodeAlt
             totalSpecialCounter += node.specialCounter
+            nOfTransactionsComplete += node.transactionsCompleted
+            nOfTransactionsFailed += node.transactionsFailed
             
+            if (node.ongoingPayments.isNotEmpty()) {
+                println("$node has ongoing payments")
+                nOfNodesWithOngoingTransactions++
+            }
+
             if (node.awake) {
                 println("$node is still doing part discovery")
                 nOfParticipantAwake++
@@ -190,9 +204,13 @@ class GraphHolder {
                 }
             }
         }
+        println("Awake transaction nodes: ${nOfNodesWithOngoingTransactions}/${nodes.size}")
         println("Awake participant nodes: ${nOfParticipantAwake}/${nOfParticipants} ")
         println("Awake rebalancing nodes: ${nOfRebalancingAwake}/${nOfParticipants}")
         println("Special counter: ${totalSpecialCounter}")
+        println()
+        println("${nOfTransactionsComplete}/${this.maxTransactions} transactions completed")
+        println("${nOfTransactionsFailed}/${this.maxTransactions} transactions failed")
         println()
         println("Total time: ${now / 1000L / 60L / 60L} hours or ${now / 1000L / 60L} minutes or ${now / 1000L} seconds")
         println()
@@ -240,7 +258,9 @@ class GraphHolder {
         }
 
         for (channel in g.getChannelSet()) {
-            val oldDemand = channelDemands.get(channel)!!
+            val oldDemand = channelDemands.get(channel)
+            if (oldDemand == null) { continue }
+
             val channelScore = oldDemand - channel.getCurrentDemand(null)
             assert(channelScore >= 0)
             if (printing) println("$channelScore/$oldDemand -> $channel")

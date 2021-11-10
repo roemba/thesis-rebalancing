@@ -40,14 +40,13 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
         return vertex === this.node1 || vertex === this.node2
     }
 
-    fun requestTx(tx: Transaction, htlc: ByteArray? = null, overrideLock: Boolean = false): Boolean {
+    fun requestTx(tx: Transaction, htlc: ByteArray? = null, overrideLock: Boolean = false) {
         if (!(this.isChannelNode(tx.from) && this.isChannelNode(tx.to))) {
             throw IllegalArgumentException("The given nodes do not belong to this channel!")
         }
 
         if (!overrideLock && this.locked) {
-            println("Channel $this is locked and no override has been given")
-            return false
+            throw IllegalStateException("Channel $this is locked and no override has been given")
         }
 
         if (tx in pendingTransactions) {
@@ -79,7 +78,6 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
             htlcTransactions.put(tx, htlc)
         }
         // println("Gave commit for $tx on $this")
-        return true
     }
 
     fun executeTx(tx: Transaction, htlc: ByteArray? = null): Boolean {
