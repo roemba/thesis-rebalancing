@@ -23,7 +23,6 @@ dependencies {
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.12.2")
     implementation("com.fasterxml.jackson.module:jackson-module-afterburner:2.12.2")
     implementation(files("libs/lpsolve55j.jar"))
-    implementation("com.github.sh0nk:matplotlib4j:0.5.0")
     testImplementation(kotlin("test-junit5"))
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.6.0")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.6.0")

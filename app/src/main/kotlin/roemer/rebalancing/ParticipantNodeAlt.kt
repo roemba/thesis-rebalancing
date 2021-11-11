@@ -43,6 +43,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
 
         this.awake = true
         this.started = true
+        this.invitesSend = true
         executionId = Tag.createTag(this)
         anonId = Tag.createTag(this)
         participants.add(anonId!!)
@@ -58,7 +59,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         }
 
         this.stopMessageSending()
-        return SimulationInput(this, sendingList, StartStopDescription(true, Algorithm.ParticipantDisc, this))
+        return SimulationInput(this, sendingList, null)
     } 
 
     fun handleInviteMessage(mes: InviteParticipantMessage) {
@@ -172,7 +173,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
             if (invitedEdges.isEmpty()) {
                 if (this.started) {
                     if (this.edgesThatAcceptedInvite.isEmpty()) {
-                        terminate(false, "As starter, I did not receive any ACCEPTs!")
+                        return terminate(false, "As starter, I did not receive any ACCEPTs!")
                     }
                     for (channel in this.childEdges) {
                         sendMessage(FinishParticipantMessage(MessageTypes.FINISH_P, this, channel.getOppositeNode(this), channel, executionId!!, participants))
@@ -203,8 +204,6 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         terminate(true)
     }
 
-
-
     fun terminate(success: Boolean, reason: String = "Unknown") {
         if (success) {
             // End result: participants and acceptedEdges, do not reset yet
@@ -215,7 +214,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
             
             result = ParticipantFindingResult(executionId!!, participants.toSet(), edgesThatAcceptedInvite.plus(edgesIAccepted))
             awake = false // Prevent participant discovery from doing anything else
-            this.startStopDesc = StartStopDescription(false, Algorithm.ParticipantDisc, this)
+            this.startStopDesc = StartDescription(Steps.Rebalance, this)
         } else {
             logger.info("Finished but was not successfull because: $reason")
             reset()

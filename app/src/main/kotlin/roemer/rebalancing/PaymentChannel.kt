@@ -120,7 +120,6 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
 
         assert(this.totalFunds == this.pendingBalance1 + this.pendingBalance2)
 
-        println("Aborting for $tx on $this")
         return true
     }
 
@@ -164,6 +163,14 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
 
         if (vertex === this.node1) {return this.balance1}
         return this.balance2
+    }
+
+    fun getChannelBalanceCoefficient(vertex: Node): Double {
+        if (!this.isChannelNode(vertex)) {
+            throw IllegalArgumentException("The given node does not belong to this channel!")
+        }
+
+        return this.getBalance(vertex).toDouble() / this.totalFunds
     }
 
     @Throws(IllegalStateException::class)

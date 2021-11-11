@@ -4,7 +4,7 @@ enum class LEVEL {
     DEBUG, INFO, WARN, ERROR
 }
 
-class Logger(val vertex: Node) {
+class Logger (val id: Int) {
     val ANSI_RESET = "\u001B[0m";
     val ANSI_BLACK = "\u001B[30m";
     val ANSI_RED = "\u001B[31m";
@@ -16,6 +16,12 @@ class Logger(val vertex: Node) {
     val ANSI_WHITE = "\u001B[37m";
     val colors = arrayOf(ANSI_RED, ANSI_GREEN, ANSI_YELLOW, ANSI_BLUE, ANSI_PURPLE, ANSI_CYAN, ANSI_WHITE)
     val logLevel = LEVEL.WARN
+
+    var vertex: Node? = null
+
+    constructor (vertex: Node) : this(vertex.id) {
+        this.vertex = vertex
+    }
 
     companion object {
         var time = 0L
@@ -38,16 +44,17 @@ class Logger(val vertex: Node) {
     }
 
     fun log(s: Any, l: LEVEL) {
-        val color = colors[vertex.id % colors.size]
+        val color = colors[this.id % colors.size]
+        val v = this.vertex
 
         if (l >= logLevel) {
             var round = ""
-            if (vertex is CoinWasherNode) {
-                round = "-R:${vertex.roundIndex}"
+            if (v != null && v is CoinWasherNode) {
+                round = "-R:${v.roundIndex}"
             }
 
-            if (true || vertex.id in arrayOf(8022) && vertex is CoinWasherNode)  { // 3150
-                println("$color${Logger.time}-$l$round: $vertex - $s $ANSI_RESET")
+            if (true || (v != null && v.id in arrayOf(8022) && v is CoinWasherNode))  { // 3150
+                println("$color${Logger.time}-$l$round: $v - $s $ANSI_RESET")
             }
         }
 

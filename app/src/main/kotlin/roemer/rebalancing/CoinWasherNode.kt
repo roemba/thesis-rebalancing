@@ -128,9 +128,9 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         return this.findParticipants(algoSettings)
     }
 
-    override fun rebalance(event: StartStopEvent): SimulationInput {
+    override fun rebalance(event: StartEvent): SimulationInput {
         logger.info("Participant discovery finished with result ") //$foundParticipantsResult, ${result!!.acceptedEdges}")
-        if (event.desc.algorithm != Algorithm.ParticipantDisc) {
+        if (event.desc.step != Steps.Rebalance) {
             throw IllegalArgumentException("$this - Rebalancing may only be woken up after participant discovery is done!")
         }
 

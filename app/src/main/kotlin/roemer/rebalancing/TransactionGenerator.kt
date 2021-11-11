@@ -10,6 +10,7 @@ class TransactionGenerator (val nodes: List<Node>, val transactionsPerInterval: 
     val EURO_SATOSHI_EXC_RATE = 1731 // On 10-11-2021
     val TRANSACTION_INTERVAL_IN_MS = 500
 
+    val logger = Logger(6)
     var nOfTransactionsGenerated = 0
 
     private fun getSenderRecipientIndex (): Int {
@@ -22,7 +23,7 @@ class TransactionGenerator (val nodes: List<Node>, val transactionsPerInterval: 
 
     fun generateTransactions (currentTime: Long): StartPaymentEvent? {
         if (this.nOfTransactionsGenerated >= this.maxTransactions) {
-            println("Max number of transactions reached")
+            logger.warn("Max number of transactions reached")
             return null
         }
 
@@ -47,9 +48,12 @@ class TransactionGenerator (val nodes: List<Node>, val transactionsPerInterval: 
         val sender = nodes[senderIndex]
         val receiver = nodes[receiverIndex]
 
-        val value = round(valueExpDistribution.sample() * (512 / 2 * this.EURO_SATOSHI_EXC_RATE) / 4.6).toInt()
+        val value = round(valueExpDistribution.sample() * (512 * this.EURO_SATOSHI_EXC_RATE) / 4.6).toInt()
 
-        println("Generated transaction from $sender to $receiver with $value satoshis or ${value/this.EURO_SATOSHI_EXC_RATE} euros")
-        return Payment(sender, receiver, value)
+        logger.debug("Generated transaction from $sender to $receiver with $value satoshis or ${value/this.EURO_SATOSHI_EXC_RATE} euros")
+
+        val p = Payment(sender, receiver, value)
+        TransactionStatusCounter.updateStatus(p, TransactionStatus.UNKNOWN)
+        return p
     }
 }

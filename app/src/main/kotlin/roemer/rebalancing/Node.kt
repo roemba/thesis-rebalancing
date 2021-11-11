@@ -8,6 +8,7 @@ import org.jgrapht.graph.DefaultWeightedEdge
 import roemer.revive.ReviveMessage
 import java.util.LinkedList
 import java.util.Queue
+import kotlin.math.abs
 
 open class Node(val id: Int, val g: ChannelNetwork) {
     val paymentChannels: MutableList<PaymentChannel> = ArrayList()
@@ -20,9 +21,11 @@ open class Node(val id: Int, val g: ChannelNetwork) {
     var transactionsFailed = 0
 
     var sendingList: MutableList<Message> = ArrayList()
-    var startStopDesc: StartStopDescription? = null
+    var startStopDesc: StartDescription? = null
     var sendingEnabled = false
     var unprocessedMessages: MutableList<Message> = ArrayList()
+
+    val REBALANCING_TRIGGER_POINT = 0.1
 
     fun startPayment(payment: Payment): SimulationInput {
         if (payment.from != this) {
@@ -50,6 +53,7 @@ open class Node(val id: Int, val g: ChannelNetwork) {
             )
         } catch (e: IllegalStateException) {
             this.transactionsFailed++
+            //TransactionStatusCounter.updateStatus(payment, TransactionStatus.FAILED)
             logger.warn("Could not start transaction because $toChannel has insufficient balance for amount ${tx.amount}")
         }
 
@@ -230,9 +234,11 @@ open class Node(val id: Int, val g: ChannelNetwork) {
             )
         } else {
             this.transactionsCompleted++
+            //TransactionStatusCounter.updateStatus(mes.payment, TransactionStatus.SUCCESS)
         }
 
         ongoingPayments.remove(mes.payment)
+        this.checkIfRebalancingRequired()
     }
 
     private fun handleAbortTxMessage(mes: PaymentMessage) {
@@ -257,6 +263,33 @@ open class Node(val id: Int, val g: ChannelNetwork) {
         }
 
         ongoingPayments.remove(mes.payment)
+    }
+
+    // Based on Pickhardt and Nowostawski - 2019 - Imbalance measure and proactive channel rebalancing
+    fun getGiniCoefficient(): Double {
+        var nom = 0.0
+        var denom = 0.0
+
+        for (i in paymentChannels) {
+            for (j in paymentChannels) {
+                nom += abs(i.getChannelBalanceCoefficient(this) - j.getChannelBalanceCoefficient(this))
+                denom += j.getChannelBalanceCoefficient(this)
+            }
+        }
+
+        return nom / (2.0 * denom)
+    }
+
+    fun checkIfRebalancingRequired() {
+        if (this.getGiniCoefficient() >= this.REBALANCING_TRIGGER_POINT) {
+            if (this.startStopDesc == null) {
+                logger.info("Started rebalancing because Gini coefficient above ${this.REBALANCING_TRIGGER_POINT}")
+                doesn't compile : // Add way to prevent starting discovery if it is already going
+                this.startStopDesc = StartDescription(Steps.Discover, this)
+            } else {
+                logger.warn("Something else already reserved the startStopDesc!")
+            }
+        }  
     }
 
     fun getChannelsForNode(node: Node): List<PaymentChannel> {

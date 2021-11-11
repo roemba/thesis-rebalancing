@@ -24,21 +24,20 @@ class MessageEvent (
     val message: Message
 ): Event(time)
 
-class StartStopDescription (
-    val start: Boolean,
-    val algorithm: Algorithm,
-    val recipient: Node?
+class StartDescription (
+    val step: Steps,
+    val recipient: Node
 )
 
-class StartStopEvent (
+class StartEvent (
     time: Long,
-    val desc: StartStopDescription
+    val desc: StartDescription
 ): Event(time)
 
 data class SimulationInput (
     val creator: Node,
     val messages: List<Message>,
-    val startStopDes: StartStopDescription?
+    val startStopDes: StartDescription?
 )
 
 class StartPaymentEvent (

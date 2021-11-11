@@ -57,6 +57,7 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String,
         }
         
         var sourceDestNotFound = 0
+        var i = 0
         for (jsonChannel in jsonChannels) {
             val srcNode = nodeIdToIndexMap.get(jsonChannel.source)
             val dstNode = nodeIdToIndexMap.get(jsonChannel.target)
@@ -68,8 +69,10 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String,
                 println("Self-loop found!")
             }
 
-            val channelBalance = (channelCapacityDistribution.sample() * EURO_SATOSHI_EXC_RATE).toInt() + (30 * this.EURO_SATOSHI_EXC_RATE)
+            val channelBalance = (channelCapacityDistribution.sample() * EURO_SATOSHI_EXC_RATE * 10).toInt() + (5 * this.EURO_SATOSHI_EXC_RATE) // Used to do *10
+            // if (i % 100 == 0) { println("Channel has $channelBalance satoshis or ${channelBalance/this.EURO_SATOSHI_EXC_RATE}") }
             g.addChannel(srcNode, dstNode, channelBalance, channelBalance)
+            i += 1
         }
 
         println("Read ${jsonNodes.size} nodes of which $duplicateNodeId were duplicates")

@@ -1,6 +1,7 @@
 package roemer.rebalancing
 
 import java.io.File
+import java.io.PrintWriter
 import java.util.*
 import java.util.PriorityQueue
 import java.util.regex.Pattern
@@ -19,8 +20,8 @@ enum class NodeTypes {
     ParticipantDisc, CoinWasher, Revive
 }
 
-enum class Algorithm {
-    ParticipantDisc, Revive, CoinWasher
+enum class Steps {
+    Discover, Rebalance
 }
 
 class GraphHolder {
@@ -32,7 +33,7 @@ class GraphHolder {
     val channelDemands: MutableMap<PaymentChannel, Int> = HashMap()
 
     val latencyDistribution = ExponentialDistribution(SeededRandom.apacheGenerator, 2.0)
-    val maxTransactions = 1000
+    val maxTransactions = 1000 // Should be 10000
 
     constructor (g: ChannelNetwork, nodes: List<Node>, nodeType: NodeTypes) {
         this.g = g
@@ -90,10 +91,17 @@ class GraphHolder {
         return delay.toLong() // SeededRandom.random.nextLong(1L, 200L)
     }
 
-    fun start (algoSettings: Map<String, Any>) {
+    fun start (algoSettings: Map<String, Any>, generateTransactions: Boolean, trialName: String) {
         // Statistics and logging
-        //saveChannelBalances()
+        if (!generateTransactions) {
+            saveChannelBalances()
+        }
         printChannelBalances()
+        val samplingInterval = 1000L // In ms
+        val sampleTimeList: MutableList<Long> = ArrayList()
+        
+        val networkImbalance: MutableList<Float> = ArrayList()
+        val successRatio: MutableList<Float> = ArrayList()
 
         // Discrete event simulation
         var now = 0L
@@ -102,19 +110,26 @@ class GraphHolder {
         val latestArrivalTimePerNodeChannelID: MutableMap<String, Long> = HashMap()
         val txGen = TransactionGenerator(nodes, 1, this.maxTransactions)
 
-        eventQueue.add(txGen.generateTransactions(now))
+        if (generateTransactions) {
+            eventQueue.add(txGen.generateTransactions(now))
+        }
 
         // Parameters
         val startNodeIndex = 0 // SeededRandom.random.nextInt(nodes.size)
 
-        while (!started || eventQueue.isNotEmpty()) {
+        while (true && (!started || eventQueue.isNotEmpty())) {
             var simulInputs: MutableList<SimulationInput> = ArrayList()
             if (!started) {
-                // val startNode = nodes[startNodeIndex]
+                val startNode = nodes[startNodeIndex]
                 // when (this.nodeType) {
-                //     NodeTypes.CoinWasher, NodeTypes.Revive -> simulInput = (startNode as Rebalancer).startSubAlgos(algoSettings)
-                //     NodeTypes.ParticipantDisc -> simulInput = (startNode as ParticipantNodeAlt).findParticipants(algoSettings)
+                //     NodeTypes.CoinWasher, NodeTypes.Revive -> {
+                //         simulInputs.add((startNode as Rebalancer).startSubAlgos(algoSettings))
+                //         simulInputs.add((nodes[4] as Rebalancer).startSubAlgos(algoSettings))
+                //     }
+                //     NodeTypes.ParticipantDisc -> simulInputs.add((startNode as ParticipantNodeAlt).findParticipants(algoSettings))
                 // }     
+
+                println("Node coefficient: ${startNode.getGiniCoefficient()}")
 
                 started = true
             } else {
@@ -124,12 +139,15 @@ class GraphHolder {
 
                 if (event is MessageEvent) {
                     simulInputs.add(event.message.recipient.receiveMessage(event.message))
-                } else if (event is StartStopEvent) {
-                    if (event.desc.recipient != null && !event.desc.start && event.desc.algorithm == Algorithm.ParticipantDisc) {
-                        when (this.nodeType) {
-                            NodeTypes.CoinWasher, NodeTypes.Revive -> simulInputs.add((event.desc.recipient as Rebalancer).rebalance(event))
-                            NodeTypes.ParticipantDisc -> {}
-                        }     
+                } else if (event is StartEvent) {
+                    when (event.desc.step) {
+                        Steps.Discover -> simulInputs.add((event.desc.recipient as Rebalancer).startSubAlgos(algoSettings))
+                        Steps.Rebalance -> {
+                            when (this.nodeType) {
+                                NodeTypes.CoinWasher, NodeTypes.Revive -> simulInputs.add((event.desc.recipient as Rebalancer).rebalance(event))
+                                else -> throw IllegalStateException("Unsupported node type for step Rebalance!")
+                            } 
+                        }
                     }
                 } else if (event is StartPaymentEvent) {
                     for (payment in event.payments) {
@@ -165,14 +183,39 @@ class GraphHolder {
                 }
     
                 if (simulInput.startStopDes != null) {
-                    eventQueue.add(StartStopEvent(now + 1, simulInput.startStopDes))
+                    eventQueue.add(StartEvent(now + 1, simulInput.startStopDes))
                 }
+            }
+
+            if (now % samplingInterval == 0L) {
+                // Collect all statistical data here
+                sampleTimeList.add(now)
+
+                var totalImbalance = 0.0
+                var nOfSuccessfullTransactions = 0
+                var totalNumberOfTransactions = 0
+                for (node in nodes) {
+                    totalImbalance += node.getGiniCoefficient()
+                    nOfSuccessfullTransactions += node.transactionsCompleted
+                    totalNumberOfTransactions += node.transactionsCompleted + node.transactionsRetried + node.transactionsFailed
+                }
+
+                // Network Imbalance
+                val nImbalance = (1.0 / nodes.size) * totalImbalance
+                networkImbalance.add(nImbalance.toFloat())
+
+                // Transaction Success Ratio
+                val ratio = nOfSuccessfullTransactions.toFloat() / totalNumberOfTransactions
+                successRatio.add(if (ratio.isNaN()) 1.0f else ratio)
             }
         }
 
         // Statistic and logging
-        //checkConservationOfCoins()
-        //calculateScore()
+        if (!generateTransactions) {
+            checkConservationOfCoins()
+            calculateScore()
+        }
+
         var nOfParticipantAwake = 0
         var nOfRebalancingAwake = 0
         var nOfNodesWithOngoingTransactions = 0
@@ -185,6 +228,11 @@ class GraphHolder {
             totalSpecialCounter += node.specialCounter
             nOfTransactionsComplete += node.transactionsCompleted
             nOfTransactionsFailed += node.transactionsFailed
+            val giniCoefficient = node.getGiniCoefficient()
+
+            if (giniCoefficient > 0.0001) {
+                println("$node has coefficient of $giniCoefficient")
+            }
             
             if (node.ongoingPayments.isNotEmpty()) {
                 println("$node has ongoing payments")
@@ -218,7 +266,22 @@ class GraphHolder {
 
         printChannelBalances()
 
+        if (generateTransactions) {
+            saveData(trialName, sampleTimeList, successRatio, networkImbalance)
+        }
+
         println("Program has finished")
+    }
+
+    private fun <T> saveData(trialName: String, vararg dataLists: List<T>) {  
+        val dataFile = File("output_files/$trialName.csv")
+        val printWriter = PrintWriter(dataFile.bufferedWriter())
+
+        printWriter.use { out -> 
+            for (list in dataLists) {
+                out.println(list.joinToString(","))
+            }
+        }
     }
 
     private fun saveChannelBalances() {
