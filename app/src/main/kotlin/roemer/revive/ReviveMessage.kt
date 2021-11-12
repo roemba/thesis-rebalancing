@@ -36,7 +36,7 @@ class DemandMessage(
     sender: Node,
     recipient: Node,
     executionId: Tag,
-    val channelsToRebalance: Set<PaymentChannel>
+    val channelDemandMap: Map<PaymentChannel, Int>
 ): ReviveMessage(type, sender, recipient, executionId) {
     override fun toString(): String {
         return "DemandMessage(type=$type, sender=$sender, recipient=$recipient, executionId=$executionId)"

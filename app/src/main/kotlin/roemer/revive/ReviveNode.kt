@@ -3,6 +3,8 @@ package roemer.revive
 import roemer.rebalancing.*
 import lpsolve.*
 import roemer.rebalancing.Rebalancer
+import kotlin.math.abs
+
 
 enum class State {
     WAITING, CONFIRMATION, COLLECTION, SIGNING
@@ -10,30 +12,26 @@ enum class State {
 
 class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebalancer {
     var orderOfStarting: List<Tag>? = null
-    var rebalancingAwake = false
-    lateinit var outgoingDemandEdges: MutableSet<PaymentChannel>
-    lateinit var incomingDemandEdges: MutableSet<PaymentChannel>
+    var channelDemands: Map<PaymentChannel, Int> = HashMap()
+    var outgoingDemandEdges: Set<PaymentChannel> = HashSet()
+    var incomingDemandEdges: Set<PaymentChannel> = HashSet()
     var leader: Node? = null
 
-    lateinit var clientStateMachine: StateMachine<State>
-    lateinit var leaderStateMachine: StateMachine<State>
-    lateinit var initMessages: MutableList<ReviveMessage>
-    lateinit var confirmMessages: MutableList<ReviveMessage>
-    lateinit var denyMessages: MutableList<ReviveMessage>
-    lateinit var demandMessages: MutableList<DemandMessage>
-    lateinit var signatures: MutableList<Signature>
-    lateinit var myTransactions: MutableList<ChannelTransaction>
+    var clientStateMachine: StateMachine<State> = StateMachine(logger, State.WAITING)
+    var leaderStateMachine: StateMachine<State> = StateMachine(logger, State.WAITING)
+    var initMessages: MutableList<ReviveMessage> = ArrayList()
+    var confirmMessages: MutableList<ReviveMessage> = ArrayList()
+    var denyMessages: MutableList<ReviveMessage> = ArrayList()
+    var demandMessages: MutableList<DemandMessage> = ArrayList()
+    var signatures: MutableList<Signature> = ArrayList()
+    var myTransactions: MutableList<ChannelTransaction> = ArrayList()
 
-    lateinit var roundParticipants: List<Node>
-    lateinit var channelsToRebalance: Set<PaymentChannel>
+    var roundParticipants: List<Node> = ArrayList()
+    var channelsToRebalance: Set<PaymentChannel> = HashSet()
 
-    init {
-        this.resetRunVars()
-    }
-
-    fun resetRunVars() {
+    override fun reset() {
         orderOfStarting = null
-        rebalancingAwake = false
+        channelDemands = HashMap()
         outgoingDemandEdges = HashSet()
         incomingDemandEdges = HashSet()
         leader = null
@@ -46,17 +44,27 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
         demandMessages = ArrayList()
         signatures = ArrayList()
         myTransactions = ArrayList()
+
+        super.reset()
     }
 
     override fun isRebalancingAwake(): Boolean {
         return this.rebalancingAwake
     }
 
-    override fun startSubAlgos(algoSettings: Map<String, Any>): SimulationInput {
+    override fun startSubAlgos(algoSettings: Map<String, Any>): SimulationInput? {
+        if (this.isRunningAlgo) {
+            logger.error("Already rebalancing")
+            return null
+        }
+        
         logger.info("Starting participant discovery before rebalancing")
-        this.algoSettings = algoSettings
+        
+        val simulInput = this.findParticipants(algoSettings)
 
-        return this.findParticipants(algoSettings)
+        this.isRunningAlgo = true
+
+        return simulInput
     }
 
     override fun rebalance(event: StartEvent): SimulationInput {
@@ -95,15 +103,9 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
 
         this.rebalancingAwake = true
 
-        for (channel in this.result!!.acceptedEdges) {
-            val demand = channel.getDemand(this)
-            logger.debug("Sorting $channel with balance $demand")
-            if (demand < 0) {
-                outgoingDemandEdges.add(channel)
-            } else {
-                incomingDemandEdges.add(channel)
-            }
-        }
+        this.channelDemands = this.result!!.acceptedEdges.map { it to it.getDemand(this) }.toMap()
+        this.outgoingDemandEdges = this.channelDemands.filter {(key, value) -> value < 0} .keys
+        this.incomingDemandEdges = this.channelDemands.keys - this.outgoingDemandEdges
 
         return true
     }
@@ -204,15 +206,15 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
         if (clientStateMachine.isInState(State.CONFIRMATION)) {
             clientStateMachine.state = State.COLLECTION
 
-            this.channelsToRebalance = outgoingDemandEdges.union(incomingDemandEdges)
+            val channelDemandMap: MutableMap<PaymentChannel, Int> = HashMap()
             this.roundParticipants = message.participants
-            for (channel in this.channelsToRebalance) {
-                channel.lock() // Make sure the channel locks now
+            for (channel in outgoingDemandEdges.union(incomingDemandEdges)) {
+                channelDemandMap[channel] = this.channelDemands[channel]!!
             }
 
             // TODO: Add filter here that randomly denies some edges to participate in rebalancing
 
-            sendMessage(DemandMessage(MessageTypes.DEMAND_REV, this, this.leader!!, this.executionId!!, this.channelsToRebalance), true)
+            sendMessage(DemandMessage(MessageTypes.DEMAND_REV, this, this.leader!!, this.executionId!!, channelDemandMap), true)
         }
     }
 
@@ -239,8 +241,17 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
     }
 
     fun generateTxSet (messages: List<DemandMessage>): Pair<DoubleArray, List<PaymentChannel>> {
-        val allChannels = messages.map { m -> m.channelsToRebalance }.reduce {accSet, channelSet -> accSet.union(channelSet)}.toList()
         val allNodes = messages.map { m -> m.sender }
+        val channelNodeDemandMap: MutableMap<PaymentChannel, MutableMap<Node, Int>> = HashMap()
+
+        for (m in messages) {
+            for ((channel, demand) in m.channelDemandMap.entries) {
+                val nodeMap = channelNodeDemandMap.getOrPut(channel, { HashMap() })
+                nodeMap[m.sender] = demand
+            }  
+        }
+
+        val allChannels = channelNodeDemandMap.keys.toList()
         
         try {
             val solver = LpSolve.makeLp(0, allChannels.size)
@@ -257,8 +268,9 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
             for (i in 0 until allChannels.size) {
                 val colnos = intArrayOf(i + 1) // 1-based columns
                 val row = doubleArrayOf(1.0) // Coefficient of 1
+                val absChannelDemand = abs(channelNodeDemandMap[allChannels[i]]!![channelNodeDemandMap[allChannels[i]]!!.keys.first()]!!)
 
-                solver.addConstraintex(colnos.size, row, colnos, LpSolve.LE, allChannels[i].getDemand(null).toDouble())
+                solver.addConstraintex(colnos.size, row, colnos, LpSolve.LE, absChannelDemand.toDouble())
             }
 
             // Node balance conservation
@@ -270,7 +282,7 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
                 for (i in 0 until allChannels.size) {
                     if (allChannels[i].isChannelNode(node)) {
                         columnNos.add(i + 1)
-                        if (allChannels[i].getDemand(node) < 0) {
+                        if (channelNodeDemandMap[allChannels[i]]!![node]!! < 0) {
                             rowList.add(1.0)
                         } else {
                             rowList.add(-1.0)
@@ -417,7 +429,6 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
             logger.info("Terminated rebalancing unsuccessfully")
         }
 
-        this.resetRunVars()
         this.reset()
     }
 }

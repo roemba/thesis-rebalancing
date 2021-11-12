@@ -19,6 +19,7 @@ class MessageCounter {
             }
             println("----------------")
             println("Total: $sum")
+            println("")
         }
 
         fun reset() {

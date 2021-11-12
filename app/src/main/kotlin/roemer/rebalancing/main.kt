@@ -12,8 +12,17 @@ fun main(args: Array<String>) {
 
     // assert(tree1Dig contentEquals tree2Dig)
 
-    //val graph = GraphHolder("difficult_graph.txt", NodeTypes.CoinWasher)
-    val trials = arrayOf("no_rebalancing", "coinwasher")
+    // val graph = GraphHolder("difficult_graph.txt", NodeTypes.Revive)
+    // val algoSettings = mapOf("hopCount" to 3, "maxNumberOfInvites" to 5, "percentageOfLeaders" to 0.5F)
+    // graph.start(algoSettings, false, "revive")
+    
+    // return
+
+    val trials = arrayOf(
+        //"no_rebalancing", 
+        //"coinwasher", 
+        "revive"
+    )
     for (trial in trials) {
         val nodeType = when (trial) {
             "no_rebalancing" -> NodeTypes.ParticipantDisc

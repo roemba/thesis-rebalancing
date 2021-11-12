@@ -109,61 +109,45 @@ class GraphHolder {
         // Discrete event simulation
         var now = 0L
         val eventQueue: Queue<Event> = PriorityQueue()
-        var started = false
         val latestArrivalTimePerNodeChannelID: MutableMap<String, Long> = HashMap()
         val txGen = TransactionGenerator(nodes, 1, this.maxTransactions)
 
+        val startNodeIndex = 0
         if (generateTransactions) {
             eventQueue.add(txGen.generateTransactions(now))
+        } else {
+            eventQueue.add(StartEvent(0, StartDescription(Steps.Discover, nodes[startNodeIndex])))
         }
 
-        // Parameters
-        val startNodeIndex = 0 // SeededRandom.random.nextInt(nodes.size)
-
-        while (true && (!started || eventQueue.isNotEmpty())) {
+        while (eventQueue.isNotEmpty()) {
             var simulInputs: MutableList<SimulationInput> = ArrayList()
-            if (!started) {
-                val startNode = nodes[startNodeIndex]
-                // when (this.nodeType) {
-                //     NodeTypes.CoinWasher, NodeTypes.Revive -> {
-                //         simulInputs.add((startNode as Rebalancer).startSubAlgos(algoSettings))
-                //         simulInputs.add((nodes[4] as Rebalancer).startSubAlgos(algoSettings))
-                //     }
-                //     NodeTypes.ParticipantDisc -> simulInputs.add((startNode as ParticipantNodeAlt).findParticipants(algoSettings))
-                // }     
+            val event = eventQueue.remove()
+            now = event.time
+            Logger.time = now
 
-                println("Node coefficient: ${startNode.getGiniCoefficient()}")
-
-                started = true
-            } else {
-                val event = eventQueue.remove()
-                now = event.time
-                Logger.time = now
-
-                if (event is MessageEvent) {
-                    simulInputs.add(event.message.recipient.receiveMessage(event.message))
-                } else if (event is StartEvent) {
-                    if (trialName != "no_rebalancing") {
-                        val simulInput = when (event.desc.step) {
-                            Steps.Discover -> (event.desc.recipient as Rebalancer).startSubAlgos(algoSettings)
-                            Steps.Rebalance -> {
-                                when (this.nodeType) {
-                                    NodeTypes.CoinWasher, NodeTypes.Revive -> (event.desc.recipient as Rebalancer).rebalance(event)
-                                    else -> throw IllegalStateException("Unsupported node type for step Rebalance!")
-                                } 
-                            }
+            if (event is MessageEvent) {
+                simulInputs.add(event.message.recipient.receiveMessage(event.message))
+            } else if (event is StartEvent) {
+                if (trialName != "no_rebalancing") {
+                    val simulInput = when (event.desc.step) {
+                        Steps.Discover -> (event.desc.recipient as Rebalancer).startSubAlgos(algoSettings)
+                        Steps.Rebalance -> {
+                            when (this.nodeType) {
+                                NodeTypes.CoinWasher, NodeTypes.Revive -> (event.desc.recipient as Rebalancer).rebalance(event)
+                                else -> throw IllegalStateException("Unsupported node type for step Rebalance!")
+                            } 
                         }
-                        if (simulInput != null) simulInputs.add(simulInput)
                     }
-                } else if (event is StartPaymentEvent) {
-                    for (payment in event.payments) {
-                        simulInputs.add(payment.from.startPayment(payment))
-                    }
-                    val simulInput = txGen.generateTransactions(now)
-                    if (simulInput != null) { eventQueue.add(simulInput) }
-                } else {
-                    throw IllegalStateException("Event type in queue is unknown!")
+                    if (simulInput != null) simulInputs.add(simulInput)
                 }
+            } else if (event is StartPaymentEvent) {
+                for (payment in event.payments) {
+                    simulInputs.add(payment.from.startPayment(payment))
+                }
+                val simulInput = txGen.generateTransactions(now)
+                if (simulInput != null) { eventQueue.add(simulInput) }
+            } else {
+                throw IllegalStateException("Event type in queue is unknown!")
             }
 
             for (simulInput in simulInputs) {
