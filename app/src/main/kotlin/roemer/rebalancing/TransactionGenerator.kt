@@ -15,7 +15,7 @@ class TransactionGenerator (val nodes: List<Node>, val transactionsPerInterval: 
 
     private fun getSenderRecipientIndex (): Int {
         var index = nodes.size + 10
-        while (index > nodes.size) {
+        while (index >= nodes.size) {
             index = ceil(senderRecipientExpDistribution.sample() * nodes.size / 4.6).toInt()
         }
         return index

@@ -4,6 +4,7 @@ import java.util.UUID
 import java.security.MessageDigest
 import kotlin.reflect.KFunction1
 import kotlin.math.roundToInt
+import kotlin.math.abs
 
 enum class RoundState {
     WAIT, REQ, SUC, COM, EXEC
@@ -39,14 +40,14 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
     val digest = MessageDigest.getInstance("SHA-256");
     
     // Needs to be reset every time the algorithm runs
-    lateinit var orderOfStarting: List<Tag>
+    var orderOfStarting: List<Tag> = ArrayList()
     var roundIndex = 0
-    var rebalancingAwake = false
-    lateinit var outgoingDemandEdges: MutableSet<PaymentChannel>
-    lateinit var incomingDemandEdges: MutableSet<PaymentChannel>
     var maxRound = 0
     
     // Needs to be reset every round
+    lateinit var outgoingDemandEdges: Set<PaymentChannel>
+    lateinit var incomingDemandEdges: Set<PaymentChannel>
+    lateinit var channelDemands: Map<PaymentChannel, Int>
     lateinit var roundStateMachine: StateMachine<RoundState>
     var nOfOutstandingRequests = 0
     lateinit var anonIdChannelMap: MutableMap<Tag, PaymentChannel>
@@ -68,10 +69,12 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
     init {
         this.resetRoundVars()
-        this.resetRunVars()
     }
 
     fun resetRoundVars() {
+        outgoingDemandEdges = HashSet()
+        incomingDemandEdges = HashSet()
+        channelDemands = HashMap()
         roundStateMachine = StateMachine(logger, RoundState.WAIT)
         nOfOutstandingRequests = 0
         anonIdChannelMap = HashMap()
@@ -89,17 +92,21 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         executionSafe = false
         failedChannels = HashSet()
 
+
         channelSuccessMessage = HashSet()
         channelCommitMessage = HashSet()
     }
 
-    fun resetRunVars() {
+    override fun reset() {
+        this.resetRoundVars()
+
         orderOfStarting = ArrayList()
         roundIndex = 0
-        rebalancingAwake = false
         outgoingDemandEdges = HashSet()
         incomingDemandEdges = HashSet()
         maxRound = 0
+
+        super.reset()
     }
     
     override fun sortMessage (message: Message) {
@@ -121,11 +128,21 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         return this.rebalancingAwake
     }
 
-    override fun startSubAlgos(algoSettings: Map<String, Any>): SimulationInput {
+    override fun startSubAlgos(algoSettings: Map<String, Any>): SimulationInput? {
+        if (this.isRunningAlgo) {
+            logger.warn("Already running another algorithm, aborting...")
+            return null
+        }
+
         logger.info("Starting participant discovery before rebalancing")
+
         this.algoSettings = algoSettings
 
-        return this.findParticipants(algoSettings)
+        val simulInput = this.findParticipants(algoSettings)
+
+        this.isRunningAlgo = true
+
+        return simulInput
     }
 
     override fun rebalance(event: StartEvent): SimulationInput {
@@ -168,27 +185,35 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
 
         logger.debug("I'm waking up!")
 
-        this.orderOfStarting = this.result!!.finalParticipants.toList().sorted()
+        val r = this.result
+        if (r == null) {
+            throw IllegalStateException("Result cannot be null when waking up!")
+        }
+
+        this.orderOfStarting = r.finalParticipants.toList().sorted()
         this.rebalancingAwake = true
+        this.isRunningAlgo = true
 
         val percentageOfLeaders = this.algoSettings["percentageOfLeaders"] as Float
         this.maxRound = (this.orderOfStarting.size.toFloat() * percentageOfLeaders).roundToInt()
 
-        for (channel in this.result!!.acceptedEdges) {
-            val demand = channel.getDemand(this)
-            // logger.debug("Sorting $channel with balance $demand")
-            if (demand < 0) {
-                outgoingDemandEdges.add(channel)
-            } else {
-                incomingDemandEdges.add(channel)
-            }
-        }
-
+        this.retrieveChannelDemands()
         logger.debug("${getRoundStarterAsNode()} is round starter")
 
         if (iStartedRound()) {
             this.startRound()
         }
+    }
+
+    fun retrieveChannelDemands () {
+        val r = this.result
+        if (r == null) {
+            throw IllegalStateException("Result cannot be null!")
+        }
+
+        this.channelDemands = r.acceptedEdges.map { it to it.getDemand(this) }.toMap()
+        this.outgoingDemandEdges = this.channelDemands.filter {(key, value) -> value < 0} .keys
+        this.incomingDemandEdges = this.channelDemands.keys - this.outgoingDemandEdges
     }
 
     // ---------- START Message checking functions -------------
@@ -279,7 +304,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             }
 
             val cycleTag = Tag.createTag(this)
-            val channelDemand = mes.channel.getDemand(null)
+            val channelDemand = abs(this.channelDemands[mes.channel]!!)
             cycleChannelPairsMap[cycleTag] = CycleChannelPair(mes.channel, anonIdChannelMap.get(channelAnonId)!!, channelDemand, false)
             sentSuccessChannel.add(mes.channel)
             sendMessage(SuccessRebalancingMessage(
@@ -479,7 +504,8 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             val F = G.entries.toList()
             assert(receivedRequests.isNotEmpty())
             for (request in receivedRequests) {
-                val N = splitEqually(request.channel.getDemand(null), F.map { e -> e.value.first }.toIntArray())
+                val channelDemand = abs(this.channelDemands[request.channel]!!)
+                val N = splitEqually(channelDemand, F.map { e -> e.value.first }.toIntArray())
                 val K: MutableList<TagDemandPair> = ArrayList()
                 for (i in 0 until F.size) {
                     K += TagDemandPair(F[i].key, N[i])
@@ -793,6 +819,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             return terminateRebalancing(true)
         }
 
+        this.retrieveChannelDemands()
         logger.debug("${getRoundStarterAsNode()} is round starter")
 
         if (iStartedRound()) {
@@ -816,7 +843,6 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
             logger.info("Terminated rebalancing unsuccessfully")
         }
 
-        this.resetRunVars()
         this.reset()
     }
 }

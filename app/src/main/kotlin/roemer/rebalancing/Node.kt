@@ -24,6 +24,10 @@ open class Node(val id: Int, val g: ChannelNetwork) {
     var startStopDesc: StartDescription? = null
     var sendingEnabled = false
     var unprocessedMessages: MutableList<Message> = ArrayList()
+    
+    var isRunningAlgo = false
+    var rebalancingAwake = false
+    var discoverAwake = false
 
     val REBALANCING_TRIGGER_POINT = 0.1
 
@@ -63,7 +67,7 @@ open class Node(val id: Int, val g: ChannelNetwork) {
 
     private fun canLogMessage(message: Message): Boolean {
         return (
-            message is PaymentMessage ||
+            //message is PaymentMessage ||
             message is ParticipantMessage ||
             message is RebalancingMessage || message is FailRebalancingMessage ||
             message is ReviveMessage
@@ -284,12 +288,17 @@ open class Node(val id: Int, val g: ChannelNetwork) {
         if (this.getGiniCoefficient() >= this.REBALANCING_TRIGGER_POINT) {
             if (this.startStopDesc == null) {
                 logger.info("Started rebalancing because Gini coefficient above ${this.REBALANCING_TRIGGER_POINT}")
-                doesn't compile : // Add way to prevent starting discovery if it is already going
                 this.startStopDesc = StartDescription(Steps.Discover, this)
             } else {
                 logger.warn("Something else already reserved the startStopDesc!")
             }
         }  
+    }
+
+    open fun reset () {
+        this.isRunningAlgo = false
+        this.discoverAwake = false
+        this.rebalancingAwake = false
     }
 
     fun getChannelsForNode(node: Node): List<PaymentChannel> {

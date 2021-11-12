@@ -15,7 +15,7 @@ class Logger (val id: Int) {
     val ANSI_CYAN = "\u001B[36m";
     val ANSI_WHITE = "\u001B[37m";
     val colors = arrayOf(ANSI_RED, ANSI_GREEN, ANSI_YELLOW, ANSI_BLUE, ANSI_PURPLE, ANSI_CYAN, ANSI_WHITE)
-    val logLevel = LEVEL.WARN
+    val logLevel = LEVEL.ERROR
 
     var vertex: Node? = null
 
@@ -53,7 +53,7 @@ class Logger (val id: Int) {
                 round = "-R:${v.roundIndex}"
             }
 
-            if (true || (v != null && v.id in arrayOf(8022) && v is CoinWasherNode))  { // 3150
+            if (true || (v != null && v.id in arrayOf(84, 2834, 8414, 4597, 1121) && v is CoinWasherNode))  { // 3150
                 println("$color${Logger.time}-$l$round: $v - $s $ANSI_RESET")
             }
         }

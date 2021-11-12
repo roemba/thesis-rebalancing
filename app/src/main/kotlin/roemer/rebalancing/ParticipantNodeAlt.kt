@@ -7,7 +7,6 @@ data class ParticipantFindingResult (
 )
 
 open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolean = false) : Node(id, g) {
-    var awake = false
     var started = false
     var invitesSend = false
     var executionId: Tag? = null
@@ -38,12 +37,23 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
     }
 
     fun findParticipants(algoSettings: Map<String, Any>): SimulationInput {
+        if (this.isRunningAlgo) {
+            throw IllegalStateException("Already running an algorithm, cannot start another")
+        }
+
+        this.isRunningAlgo = true
+
         this.algoSettings = algoSettings
         this.initMessageSending()
 
-        this.awake = true
+        this.discoverAwake = true
         this.started = true
         this.invitesSend = true
+
+        if (executionId != null) {
+            throw IllegalStateException("Execution id must be null as otherwise I'm overwriting another execution!")
+        }
+
         executionId = Tag.createTag(this)
         anonId = Tag.createTag(this)
         participants.add(anonId!!)
@@ -80,7 +90,8 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
 
         // If not already claimed or finished, become claimed
         if (executionId == null && result == null) {
-            this.awake = true
+            this.discoverAwake = true
+            this.isRunningAlgo = true
             executionId = mes.executionId
             this.algoSettings = mes.algoSettings
             anonId = Tag.createTag(this)
@@ -116,7 +127,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
     }
 
     fun handleAcceptMessage(mes: AcceptParticipantMessage) {
-        if (!awake) {
+        if (!discoverAwake) {
             return
         } else if (mes.executionId != executionId) {
             return sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, mes.sender, mes.channel, executionId!!))
@@ -141,7 +152,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
     }
 
     fun handleDenyMessage(mes: ParticipantMessage) {
-        if (!awake) {
+        if (!discoverAwake) {
             return
         }
 
@@ -188,7 +199,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
     }
 
     fun handleFinishMessage(mes: FinishParticipantMessage) {
-        if (!awake) {
+        if (!discoverAwake) {
             return
         } else if (mes.executionId != executionId) {
             return sendMessage(ParticipantMessage(MessageTypes.DENY_P, this, mes.sender, mes.channel, executionId!!))
@@ -213,7 +224,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
             }
             
             result = ParticipantFindingResult(executionId!!, participants.toSet(), edgesThatAcceptedInvite.plus(edgesIAccepted))
-            awake = false // Prevent participant discovery from doing anything else
+            discoverAwake = false // Prevent participant discovery from doing anything else
             this.startStopDesc = StartDescription(Steps.Rebalance, this)
         } else {
             logger.info("Finished but was not successfull because: $reason")
@@ -221,8 +232,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         }
     }
 
-    fun reset() {
-        awake = false
+    override fun reset() {
         started = false
         invitesSend = false
         executionId = null
@@ -230,11 +240,15 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
         participants  = HashSet()
         edgesThatAcceptedInvite = HashSet()
         childEdges = HashSet()
-        edgesIAccepted = HashSet()
-        invitedEdges = HashSet()
         parentEdge = null
+        invitedEdges = HashSet()
         nOfExpectedResponses = 0
-
+        deniedEdges = HashSet()
+        edgesIAccepted = HashSet()
+        receivedResponses = 0
         sendFinalList = false
+        result = null
+
+        super.reset()
     }
 }

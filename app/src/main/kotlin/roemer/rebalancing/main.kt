@@ -13,12 +13,22 @@ fun main(args: Array<String>) {
     // assert(tree1Dig contentEquals tree2Dig)
 
     //val graph = GraphHolder("difficult_graph.txt", NodeTypes.CoinWasher)
-    val trials = arrayOf("no_rebalancing")
+    val trials = arrayOf("no_rebalancing", "coinwasher")
     for (trial in trials) {
-        val graph = GraphHolder("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.CoinWasher)
+        val nodeType = when (trial) {
+            "no_rebalancing" -> NodeTypes.ParticipantDisc
+            "coinwasher" -> NodeTypes.CoinWasher
+            "revive" -> NodeTypes.Revive
+            else -> throw IllegalArgumentException("Trial name should match to a NodeType!")
+        }
+
+        val graph = GraphHolder("nodes_05-05-2021.json", "channels_05-05-2021.json", nodeType)
 
         val algoSettings = mapOf("hopCount" to 3, "maxNumberOfInvites" to 5, "percentageOfLeaders" to 0.5F)
         graph.start(algoSettings, true, trial)
+
+        SeededRandom.reset()
+        MessageCounter.reset()
     }
     // LpSolveDemo().demo()
 }

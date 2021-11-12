@@ -2,9 +2,12 @@ package roemer.rebalancing
 
 import java.io.File
 import java.io.PrintWriter
+import java.io.BufferedWriter
+import java.io.FileWriter
 import java.util.*
 import java.util.PriorityQueue
 import java.util.regex.Pattern
+import java.time.Instant
 import kotlin.math.max
 import kotlin.collections.ArrayList
 import guru.nidi.graphviz.model.Factory.graph as GraphVizGraph
@@ -33,7 +36,7 @@ class GraphHolder {
     val channelDemands: MutableMap<PaymentChannel, Int> = HashMap()
 
     val latencyDistribution = ExponentialDistribution(SeededRandom.apacheGenerator, 2.0)
-    val maxTransactions = 1000 // Should be 10000
+    val maxTransactions = 5000 // Should be 10000
 
     constructor (g: ChannelNetwork, nodes: List<Node>, nodeType: NodeTypes) {
         this.g = g
@@ -140,14 +143,17 @@ class GraphHolder {
                 if (event is MessageEvent) {
                     simulInputs.add(event.message.recipient.receiveMessage(event.message))
                 } else if (event is StartEvent) {
-                    when (event.desc.step) {
-                        Steps.Discover -> simulInputs.add((event.desc.recipient as Rebalancer).startSubAlgos(algoSettings))
-                        Steps.Rebalance -> {
-                            when (this.nodeType) {
-                                NodeTypes.CoinWasher, NodeTypes.Revive -> simulInputs.add((event.desc.recipient as Rebalancer).rebalance(event))
-                                else -> throw IllegalStateException("Unsupported node type for step Rebalance!")
-                            } 
+                    if (trialName != "no_rebalancing") {
+                        val simulInput = when (event.desc.step) {
+                            Steps.Discover -> (event.desc.recipient as Rebalancer).startSubAlgos(algoSettings)
+                            Steps.Rebalance -> {
+                                when (this.nodeType) {
+                                    NodeTypes.CoinWasher, NodeTypes.Revive -> (event.desc.recipient as Rebalancer).rebalance(event)
+                                    else -> throw IllegalStateException("Unsupported node type for step Rebalance!")
+                                } 
+                            }
                         }
+                        if (simulInput != null) simulInputs.add(simulInput)
                     }
                 } else if (event is StartPaymentEvent) {
                     for (payment in event.payments) {
@@ -222,7 +228,6 @@ class GraphHolder {
         var nOfTransactionsComplete = 0
         var nOfTransactionsFailed = 0
         var totalSpecialCounter = 0
-        val nOfParticipants = (nodes[startNodeIndex] as ParticipantNodeAlt).result?.finalParticipants?.size
         for (i in 0 until nodes.size) {
             val node = nodes[i] as ParticipantNodeAlt
             totalSpecialCounter += node.specialCounter
@@ -230,16 +235,16 @@ class GraphHolder {
             nOfTransactionsFailed += node.transactionsFailed
             val giniCoefficient = node.getGiniCoefficient()
 
-            if (giniCoefficient > 0.0001) {
-                println("$node has coefficient of $giniCoefficient")
-            }
+            // if (giniCoefficient > 0.0001) {
+            //     println("$node has coefficient of $giniCoefficient")
+            // }
             
             if (node.ongoingPayments.isNotEmpty()) {
                 println("$node has ongoing payments")
                 nOfNodesWithOngoingTransactions++
             }
 
-            if (node.awake) {
+            if (node.discoverAwake) {
                 println("$node is still doing part discovery")
                 nOfParticipantAwake++
             }
@@ -253,8 +258,8 @@ class GraphHolder {
             }
         }
         println("Awake transaction nodes: ${nOfNodesWithOngoingTransactions}/${nodes.size}")
-        println("Awake participant nodes: ${nOfParticipantAwake}/${nOfParticipants} ")
-        println("Awake rebalancing nodes: ${nOfRebalancingAwake}/${nOfParticipants}")
+        println("Awake participant nodes: ${nOfParticipantAwake}")
+        println("Awake rebalancing nodes: ${nOfRebalancingAwake}")
         println("Special counter: ${totalSpecialCounter}")
         println()
         println("${nOfTransactionsComplete}/${this.maxTransactions} transactions completed")
@@ -274,8 +279,8 @@ class GraphHolder {
     }
 
     private fun <T> saveData(trialName: String, vararg dataLists: List<T>) {  
-        val dataFile = File("output_files/$trialName.csv")
-        val printWriter = PrintWriter(dataFile.bufferedWriter())
+        val fileWriter = FileWriter("output_files/${trialName}.csv", false)
+        val printWriter = PrintWriter(BufferedWriter(fileWriter))
 
         printWriter.use { out -> 
             for (list in dataLists) {

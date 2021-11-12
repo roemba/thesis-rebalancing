@@ -3,6 +3,7 @@ package roemer.rebalancing
 import java.lang.IllegalArgumentException
 import org.jgrapht.graph.DefaultWeightedEdge
 import java.util.UUID
+import kotlin.math.min
 
 class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultWeightedEdge>, var balance1: Int, var balance2: Int) {
     val id = SeededRandom.getRandomUUID()
@@ -131,14 +132,16 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
         return true
     }
 
-    @Throws(IllegalStateException::class)
     fun getDemand(vertex: Node?): Int {
-        this.lock()
+        if (!this.locked) {
+            this.lock()
+        }
+
         return getCurrentDemand(vertex)
     }
 
     fun getCurrentDemand(vertex: Node?): Int {
-        var diff = (this.balance2 - this.balance1) / 2
+        var diff = (min(this.balance2, this.pendingBalance2) - min(this.balance1, this.pendingBalance1)) / 2
 
         if (vertex == null) {
             return Math.abs(diff)
@@ -173,13 +176,8 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
         return this.getBalance(vertex).toDouble() / this.totalFunds
     }
 
-    @Throws(IllegalStateException::class)
     fun lock() {
         this.locked = true
-
-        if (this.hasOngoingTx()) {
-            throw IllegalStateException("Cannot lock channel as there are still pending transactions, check back later!")
-        }
     }
 
     fun unlock() {

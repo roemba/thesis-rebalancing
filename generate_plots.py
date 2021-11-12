@@ -3,8 +3,9 @@ import scipy.stats as st
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
-trial_names = ["no_rebalancing"]
+trial_names = ["no_rebalancing", "coinwasher"]
 arr_per_trial = {}
 
 for name in trial_names:
