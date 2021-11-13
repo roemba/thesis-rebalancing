@@ -1,62 +1,85 @@
 package roemer.rebalancing
 
-enum class LEVEL {
+enum class LogLevel {
     DEBUG, INFO, WARN, ERROR
 }
 
-class Logger (val id: Int) {
-    val ANSI_RESET = "\u001B[0m";
-    val ANSI_BLACK = "\u001B[30m";
-    val ANSI_RED = "\u001B[31m";
-    val ANSI_GREEN = "\u001B[32m";
-    val ANSI_YELLOW = "\u001B[33m";
-    val ANSI_BLUE = "\u001B[34m";
-    val ANSI_PURPLE = "\u001B[35m";
-    val ANSI_CYAN = "\u001B[36m";
-    val ANSI_WHITE = "\u001B[37m";
-    val colors = arrayOf(ANSI_RED, ANSI_GREEN, ANSI_YELLOW, ANSI_BLUE, ANSI_PURPLE, ANSI_CYAN, ANSI_WHITE)
-    val logLevel = LEVEL.ERROR
+enum class TerminalColor(val code: String) {
+    // ANSI_BLACK("\u001B[30m"),
+    ANSI_RED("\u001B[31m"),
+    ANSI_GREEN("\u001B[32m"),
+    ANSI_YELLOW("\u001B[33m"),
+    ANSI_BLUE("\u001B[34m"),
+    ANSI_PURPLE("\u001B[35m"),
+    ANSI_CYAN("\u001B[36m"),
+    ANSI_WHITE("\u001B[37m")
+}
 
+class NodeLogger (val id: Int, val parent: Logger): Logger() {
     var vertex: Node? = null
 
-    constructor (vertex: Node) : this(vertex.id) {
+    constructor (vertex: Node, parent: Logger) : this(vertex.id, parent) {
         this.vertex = vertex
     }
 
-    companion object {
-        var time = 0L
-    } 
+    override fun getColor(l: LogLevel): TerminalColor {
+        val colors = TerminalColor.values()
+        return colors[this.id % colors.size]
+    }
     
+    override fun log(s: Any, l: LogLevel) {
+        val v = this.vertex
+
+        var round = ""
+        if (v != null && v is CoinWasherNode) {
+            round = "R${v.roundIndex}:"
+        }
+
+        if (true || (v != null && v.id in arrayOf(84, 2834, 8414, 4597, 1121) && v is CoinWasherNode)) {
+            super.logAtTime("$round $v - $s", l, this.parent.time)
+        }
+    }
+}
+
+
+open class Logger {
+    var time = 0L
+    val logLevel = LogLevel.ERROR
+    val ANSI_RESET = "\u001B[0m"
+    
+    fun getNodeLogger (vertex: Node): NodeLogger {
+        return NodeLogger(vertex, this)
+    }
+
     fun debug(s: Any) {
-        log(s, LEVEL.DEBUG)
+        log(s, LogLevel.DEBUG)
     }
 
     fun info(s: Any) {
-        log(s, LEVEL.INFO)
+        log(s, LogLevel.INFO)
     }
 
     fun warn(s: Any) {
-        log(s, LEVEL.WARN)
+        log(s, LogLevel.WARN)
     }
 
     fun error(s: Any) {
-        log(s, LEVEL.ERROR)
+        log(s, LogLevel.ERROR)
     }
 
-    fun log(s: Any, l: LEVEL) {
-        val color = colors[this.id % colors.size]
-        val v = this.vertex
+    open fun getColor(l: LogLevel): TerminalColor {
+        return TerminalColor.ANSI_WHITE
+    }
 
-        if (l >= logLevel) {
-            var round = ""
-            if (v != null && v is CoinWasherNode) {
-                round = "-R:${v.roundIndex}"
-            }
+    open fun log(s: Any, l: LogLevel) {
+        this.logAtTime(s, l, this.time)
+    }
 
-            if (true || (v != null && v.id in arrayOf(84, 2834, 8414, 4597, 1121) && v is CoinWasherNode))  { // 3150
-                println("$color${Logger.time}-$l$round: $v - $s $ANSI_RESET")
-            }
+    fun logAtTime(s: Any, l: LogLevel, runTime: Long) {
+        val color = this.getColor(l).code
+
+        if (l >= this.logLevel) {
+            println("$color${runTime}-$l:$s $ANSI_RESET")
         }
-
     }
 }

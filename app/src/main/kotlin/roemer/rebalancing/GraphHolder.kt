@@ -35,7 +35,10 @@ class GraphHolder {
     val channelBalances: MutableMap<Pair<Node, PaymentChannel>, Int> = HashMap()
     val channelDemands: MutableMap<PaymentChannel, Int> = HashMap()
 
-    val latencyDistribution = ExponentialDistribution(SeededRandom.apacheGenerator, 2.0)
+    val random = SeededRandom()
+    val logger = Logger()
+
+    val latencyDistribution = ExponentialDistribution(this.random.apacheGenerator, 2.0)
     val maxTransactions = 5000 // Should be 10000
 
     constructor (g: ChannelNetwork, nodes: List<Node>, nodeType: NodeTypes) {
@@ -46,7 +49,7 @@ class GraphHolder {
 
     constructor (nodeFileName: String, channelFileName: String, nodeType: NodeTypes) {
         this.nodeType = nodeType
-        val translator = TopologyTranslator(nodeFileName, channelFileName, nodeType)
+        val translator = TopologyTranslator(nodeFileName, channelFileName, nodeType, this.random, this.logger)
         val (g, nodes) = translator.translate()
 
         this.g = g
@@ -65,12 +68,13 @@ class GraphHolder {
         val nOfNodes = graphFileReader.nextInt()
         graphFileReader.nextLine()
 
+        val messageCounter = MessageCounter()
         val nodes: MutableList<Node> = ArrayList()
         for (i in 0 until nOfNodes) {
             val n = when (this.nodeType) {
-                NodeTypes.CoinWasher -> CoinWasherNode(i, g)
-                NodeTypes.Revive -> ReviveNode(i, g)
-                NodeTypes.ParticipantDisc -> ParticipantNodeAlt(i, g)
+                NodeTypes.CoinWasher -> CoinWasherNode(i, g, messageCounter, this.random, this.logger)
+                NodeTypes.Revive -> ReviveNode(i, g, messageCounter, this.random, this.logger)
+                NodeTypes.ParticipantDisc -> ParticipantNodeAlt(i, g, messageCounter, this.random, this.logger)
             }
 
             g.graph.addVertex(n)
@@ -110,20 +114,20 @@ class GraphHolder {
         var now = 0L
         val eventQueue: Queue<Event> = PriorityQueue()
         val latestArrivalTimePerNodeChannelID: MutableMap<String, Long> = HashMap()
-        val txGen = TransactionGenerator(nodes, 1, this.maxTransactions)
+        val txGen = TransactionGenerator(nodes, 1, this.maxTransactions, this.logger)
 
         val startNodeIndex = 0
         if (generateTransactions) {
             eventQueue.add(txGen.generateTransactions(now))
         } else {
-            eventQueue.add(StartEvent(0, StartDescription(Steps.Discover, nodes[startNodeIndex])))
+            eventQueue.add(StartEvent(0, this.random, StartDescription(Steps.Discover, nodes[startNodeIndex])))
         }
 
         while (eventQueue.isNotEmpty()) {
             var simulInputs: MutableList<SimulationInput> = ArrayList()
             val event = eventQueue.remove()
             now = event.time
-            Logger.time = now
+            this.logger.time = now
 
             if (event is MessageEvent) {
                 simulInputs.add(event.message.recipient.receiveMessage(event.message))
@@ -169,11 +173,11 @@ class GraphHolder {
                         }
                     }
     
-                    eventQueue.add(MessageEvent(eventTime, message))
+                    eventQueue.add(MessageEvent(eventTime, this.random, message))
                 }
     
                 if (simulInput.startStopDes != null) {
-                    eventQueue.add(StartEvent(now + 1, simulInput.startStopDes))
+                    eventQueue.add(StartEvent(now + 1, this.random, simulInput.startStopDes))
                 }
             }
 
@@ -251,7 +255,7 @@ class GraphHolder {
         println()
         println("Total time: ${now / 1000L / 60L / 60L} hours or ${now / 1000L / 60L} minutes or ${now / 1000L} seconds")
         println()
-        MessageCounter.printCounts()
+        nodes[0].messageCounter.printCounts()
 
         printChannelBalances()
 

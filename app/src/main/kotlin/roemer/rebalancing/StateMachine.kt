@@ -1,6 +1,6 @@
 package roemer.rebalancing
 
-class StateMachine<T : Enum<T>> (val logger: Logger, startState: T) {
+class StateMachine<T : Enum<T>> (val logger: NodeLogger, startState: T) {
     var state = startState
         set(newState) {
             if (newState > state) {

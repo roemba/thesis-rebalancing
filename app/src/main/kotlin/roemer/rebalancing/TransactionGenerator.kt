@@ -4,13 +4,13 @@ import org.apache.commons.math3.distribution.ExponentialDistribution
 import kotlin.math.ceil
 import kotlin.math.round
 
-class TransactionGenerator (val nodes: List<Node>, val transactionsPerInterval: Int, val maxTransactions: Int) {
-    val senderRecipientExpDistribution = ExponentialDistribution(SeededRandom.apacheGenerator, 1.0)
-    val valueExpDistribution = ExponentialDistribution(SeededRandom.apacheGenerator, 1.0 / 15.0)
+class TransactionGenerator (val nodes: List<Node>, val transactionsPerInterval: Int, val maxTransactions: Int, val logger: Logger) {
+    val random = nodes[0].random
+    val senderRecipientExpDistribution = ExponentialDistribution(this.random.apacheGenerator, 1.0)
+    val valueExpDistribution = ExponentialDistribution(this.random.apacheGenerator, 1.0 / 15.0)
     val EURO_SATOSHI_EXC_RATE = 1731 // On 10-11-2021
     val TRANSACTION_INTERVAL_IN_MS = 500
 
-    val logger = Logger(6)
     var nOfTransactionsGenerated = 0
 
     private fun getSenderRecipientIndex (): Int {
@@ -34,7 +34,7 @@ class TransactionGenerator (val nodes: List<Node>, val transactionsPerInterval: 
 
         this.nOfTransactionsGenerated += payments.size
         
-        return StartPaymentEvent(currentTime + this.TRANSACTION_INTERVAL_IN_MS, payments)
+        return StartPaymentEvent(currentTime + this.TRANSACTION_INTERVAL_IN_MS, this.random, payments)
     }
 
     fun generateTransaction (): Payment {
@@ -52,8 +52,6 @@ class TransactionGenerator (val nodes: List<Node>, val transactionsPerInterval: 
 
         logger.debug("Generated transaction from $sender to $receiver with $value satoshis or ${value/this.EURO_SATOSHI_EXC_RATE} euros")
 
-        val p = Payment(sender, receiver, value)
-        TransactionStatusCounter.updateStatus(p, TransactionStatus.UNKNOWN)
-        return p
+        return Payment(sender, receiver, value)
     }
 }

@@ -6,7 +6,7 @@ data class ParticipantFindingResult (
     val acceptedEdges: Set<PaymentChannel>
 )
 
-open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolean = false) : Node(id, g) {
+open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, messageCounter: MessageCounter, random: SeededRandom, globalLogger: Logger, val randomDeny: Boolean = false) : Node(id, g, messageCounter, random, globalLogger) {
     var started = false
     var invitesSend = false
     var executionId: Tag? = null
@@ -73,7 +73,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, val randomDeny: Boolea
     } 
 
     fun handleInviteMessage(mes: InviteParticipantMessage) {
-        if (randomDeny && SeededRandom.random.nextInt(10) < 2) {
+        if (randomDeny && this.random.random.nextInt(10) < 2) {
             deniedEdges.add(mes.channel)
         }
 

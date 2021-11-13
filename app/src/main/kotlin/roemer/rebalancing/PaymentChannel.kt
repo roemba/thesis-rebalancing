@@ -6,7 +6,7 @@ import java.util.UUID
 import kotlin.math.min
 
 class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultWeightedEdge>, var balance1: Int, var balance2: Int) {
-    val id = SeededRandom.getRandomUUID()
+    val id = this.node1.random.getRandomUUID()
     var totalFunds = balance1 + balance2
         private set
     var pendingBalance1 = balance1

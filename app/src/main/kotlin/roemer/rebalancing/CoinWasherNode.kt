@@ -36,7 +36,7 @@ data class TagDemandHTLCPair(
     }
 }
 
-class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebalancer {
+class CoinWasherNode(id: Int, g: ChannelNetwork, messageCounter: MessageCounter, random: SeededRandom, globalLogger: Logger) : ParticipantNodeAlt(id, g, messageCounter, random, globalLogger), Rebalancer {
     val digest = MessageDigest.getInstance("SHA-256");
     
     // Needs to be reset every time the algorithm runs
@@ -212,7 +212,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         }
 
         this.channelDemands = r.acceptedEdges.map { it to it.getDemand(this) }.toMap()
-        this.outgoingDemandEdges = this.channelDemands.filter {(key, value) -> value < 0} .keys
+        this.outgoingDemandEdges = this.channelDemands.filter {(_, value) -> value < 0} .keys
         this.incomingDemandEdges = this.channelDemands.keys - this.outgoingDemandEdges
     }
 
@@ -253,7 +253,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Re
         if (this.getRoundStarter() != mes.startId) {
             logger.error("Received message from a different round while not allowed!")
             throw IllegalStateException("Message $this received from different round while not allowed!")
-            return FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_ROUND, mes.startId, this.executionId)
+            // return FailRebalancingMessage(MessageTypes.FAIL_R, this, mes.sender, mes.channel, FailReason.INCORRECT_ROUND, mes.startId, this.executionId)
         }
         return null
     }

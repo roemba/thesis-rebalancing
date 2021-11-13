@@ -17,7 +17,7 @@ class Tag: Comparable<Tag> {
 
     companion object {
         fun createTag(creator: Node): Tag {
-            return Tag(SeededRandom.getRandomUUID(), creator) // Int = SeededRandom.getRandomInt() // 
+            return Tag(creator.random.getRandomUUID(), creator) // Int = SeededRandom.getRandomInt() // 
         }
     }
 

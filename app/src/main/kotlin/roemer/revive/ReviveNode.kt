@@ -10,7 +10,7 @@ enum class State {
     WAITING, CONFIRMATION, COLLECTION, SIGNING
 }
 
-class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebalancer {
+class ReviveNode(id: Int, g: ChannelNetwork, messageCounter: MessageCounter, random: SeededRandom, globalLogger: Logger) : ParticipantNodeAlt(id, g, messageCounter, random, globalLogger), Rebalancer {
     var orderOfStarting: List<Tag>? = null
     var channelDemands: Map<PaymentChannel, Int> = HashMap()
     var outgoingDemandEdges: Set<PaymentChannel> = HashSet()
@@ -104,7 +104,7 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
         this.rebalancingAwake = true
 
         this.channelDemands = this.result!!.acceptedEdges.map { it to it.getDemand(this) }.toMap()
-        this.outgoingDemandEdges = this.channelDemands.filter {(key, value) -> value < 0} .keys
+        this.outgoingDemandEdges = this.channelDemands.filter {(_, value) -> value < 0} .keys
         this.incomingDemandEdges = this.channelDemands.keys - this.outgoingDemandEdges
 
         return true
@@ -339,7 +339,7 @@ class ReviveNode(id: Int, g: ChannelNetwork) : ParticipantNodeAlt(id, g), Rebala
                 to = from
                 from = temp
             }
-            val tx = ChannelTransaction(SeededRandom.getRandomUUID(), channelDemands[i].toInt(), from, to, SeededRandom.getRandomUUID(), channels[i])
+            val tx = ChannelTransaction(this.random.getRandomUUID(), channelDemands[i].toInt(), from, to, this.random.getRandomUUID(), channels[i])
             if (tx.amount > 0) { transactions += tx }
         }
 

@@ -39,3 +39,5 @@ app/bin/
 .settings/
 
 .vscode/settings.json
+venv/
+app/output_files/

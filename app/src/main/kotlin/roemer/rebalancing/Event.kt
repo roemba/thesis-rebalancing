@@ -1,12 +1,13 @@
 package roemer.rebalancing
 
 abstract class Event (
-    val time: Long
+    val time: Long,
+    val random: SeededRandom
 ): Comparable<Event> {
     val id: Long
 
     init {
-        this.id = SeededRandom.getIncreasingLong()
+        this.id = this.random.getIncreasingLong()
     }
 
     override fun compareTo (other: Event): Int {
@@ -21,8 +22,9 @@ abstract class Event (
 
 class MessageEvent (
     time: Long,
+    random: SeededRandom,
     val message: Message
-): Event(time)
+): Event(time, random)
 
 class StartDescription (
     val step: Steps,
@@ -31,8 +33,9 @@ class StartDescription (
 
 class StartEvent (
     time: Long,
+    random: SeededRandom,
     val desc: StartDescription
-): Event(time)
+): Event(time, random)
 
 data class SimulationInput (
     val creator: Node,
@@ -42,5 +45,6 @@ data class SimulationInput (
 
 class StartPaymentEvent (
     time: Long,
+    random: SeededRandom,
     val payments: List<Payment>
-): Event(time)
+): Event(time, random)
