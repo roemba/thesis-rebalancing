@@ -60,12 +60,17 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, messageCounter: Messag
 
         logger.info("Starting to find participants with execution id: $executionId and participant id: $anonId")
 
+        val maxNumberOfInvites = this.algoSettings["maxNumberOfInvites"] as Int
         for (channel in this.paymentChannels) {
             sendMessage(InviteParticipantMessage(
                 MessageTypes.INVITE_P, this, channel.getOppositeNode(this), channel, executionId!!, algoSettings["hopCount"] as Int, this.algoSettings
             ))
             invitedEdges.add(channel)
             nOfExpectedResponses++
+
+            if (invitedEdges.size >= maxNumberOfInvites) {
+                break
+            }
         }
 
         this.stopMessageSending()

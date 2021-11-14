@@ -16,11 +16,12 @@ fun main() {
 
     // assert(tree1Dig contentEquals tree2Dig)
 
-    // val graph = GraphHolder("difficult_graph.txt", NodeTypes.Revive)
-    // val algoSettings = mapOf("hopCount" to 3, "maxNumberOfInvites" to 5, "percentageOfLeaders" to 0.5F)
-    // graph.start(algoSettings, false, "revive")
+    val graph = GraphHolder.createGraphHolderFromTxtGraph("difficult_graph.txt", NodeTypes.CoinWasher, SeededRandom(21))
+    //val graph = GraphHolder("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.CoinWasher)
+    val algoSettings = mapOf("hopCount" to 3, "maxNumberOfInvites" to 5, "percentageOfLeaders" to 0.5F)
+    graph.start(algoSettings, false, "coinwasher")
     
-    // return
+    return
 
     val trials = arrayOf(
         "no_rebalancing", 
@@ -47,7 +48,7 @@ suspend fun runTrial(trial: String) {
         else -> throw IllegalArgumentException("Trial name should match to a NodeType!")
     }
 
-    val graph = GraphHolder("nodes_05-05-2021.json", "channels_05-05-2021.json", nodeType)
+    val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", nodeType, SeededRandom(20))
 
     val algoSettings = mapOf("hopCount" to 3, "maxNumberOfInvites" to 5, "percentageOfLeaders" to 0.5F)
     graph.start(algoSettings, true, trial)

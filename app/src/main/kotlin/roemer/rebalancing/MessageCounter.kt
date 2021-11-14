@@ -11,13 +11,21 @@ class MessageCounter {
 
     fun printCounts() {
         println("Message counts per type:")
-        var sum = 0
+        var partSum = 0
+        var rebalanceSum = 0
         for (entry in counters.entries) {
             println("${entry.key}: ${entry.value}")
-            sum += entry.value
+            if (entry.key in arrayOf(MessageTypes.REQ_TX, MessageTypes.EXEC_TX, MessageTypes.ABORT_TX)) {
+                continue
+            } else if (entry.key in arrayOf(MessageTypes.INVITE_P, MessageTypes.ACCEPT_P, MessageTypes.FINISH_P, MessageTypes.DENY_P)) {
+                partSum += entry.value
+            } else {
+                rebalanceSum += entry.value
+            }
         }
         println("----------------")
-        println("Total: $sum")
+        println("Total participant mes: $partSum")
+        println("Total rebalance mes: $rebalanceSum")
         println("")
     }
 }

@@ -27,70 +27,96 @@ enum class Steps {
     Discover, Rebalance
 }
 
-class GraphHolder {
+class GraphHolder (
+    val g: ChannelNetwork,
+    val nodes: List<Node>,
+    val nodeType: NodeTypes,
+    val random: SeededRandom,
+    val logger: Logger
+) {
     val paymentChannels: MutableList<PaymentChannel> = ArrayList()
-    val g: ChannelNetwork
-    val nodes: List<Node>
-    val nodeType: NodeTypes
     val channelBalances: MutableMap<Pair<Node, PaymentChannel>, Int> = HashMap()
     val channelDemands: MutableMap<PaymentChannel, Int> = HashMap()
-
-    val random = SeededRandom()
-    val logger = Logger()
 
     val latencyDistribution = ExponentialDistribution(this.random.apacheGenerator, 2.0)
     val maxTransactions = 5000 // Should be 10000
 
-    constructor (g: ChannelNetwork, nodes: List<Node>, nodeType: NodeTypes) {
-        this.g = g
-        this.nodes = nodes
-        this.nodeType = nodeType
-    }
+    companion object { 
+        fun createGraphHolderFromTxtGraph (txtGraphFileName: String, nodeType: NodeTypes, random: SeededRandom): GraphHolder {
+            val g = ChannelNetwork()
+            val logger = Logger()
 
-    constructor (nodeFileName: String, channelFileName: String, nodeType: NodeTypes) {
-        this.nodeType = nodeType
-        val translator = TopologyTranslator(nodeFileName, channelFileName, nodeType, this.random, this.logger)
-        val (g, nodes) = translator.translate()
+            val resourceName = this::class.java.classLoader.getResource(txtGraphFileName)!!.file
 
-        this.g = g
-        this.nodes = nodes
-    }
+            txtGraphToGraphViz(resourceName, txtGraphFileName)
 
-    constructor (txtGraphFileName: String, nodeType: NodeTypes) {
-        this.g = ChannelNetwork()
-        this.nodeType = nodeType
+            val graphFileReader = Scanner(File(resourceName))
+            val nOfNodes = graphFileReader.nextInt()
+            graphFileReader.nextLine()
 
-        val resourceName = this::class.java.classLoader.getResource(txtGraphFileName)!!.file
+            val messageCounter = MessageCounter()
+            val nodes: MutableList<Node> = ArrayList()
+            for (i in 0 until nOfNodes) {
+                val n = when (nodeType) {
+                    NodeTypes.CoinWasher -> CoinWasherNode(i, g, messageCounter, random, logger)
+                    NodeTypes.Revive -> ReviveNode(i, g, messageCounter, random, logger)
+                    NodeTypes.ParticipantDisc -> ParticipantNodeAlt(i, g, messageCounter, random, logger)
+                }
 
-        txtGraphToGraphViz(resourceName, txtGraphFileName)
+                g.graph.addVertex(n)
+                nodes.add(n)
+            }
+            
+            val edgePattern = "\\d+-\\d+"
+            while (graphFileReader.hasNext(edgePattern)) {
+                val edgeString = graphFileReader.next(edgePattern)
+                val nodeIds = edgeString.split("-").map { it.toInt() }
+                val balances = graphFileReader.next(edgePattern).split("-").map { it.toInt() }
 
-        val graphFileReader = Scanner(File(resourceName))
-        val nOfNodes = graphFileReader.nextInt()
-        graphFileReader.nextLine()
-
-        val messageCounter = MessageCounter()
-        val nodes: MutableList<Node> = ArrayList()
-        for (i in 0 until nOfNodes) {
-            val n = when (this.nodeType) {
-                NodeTypes.CoinWasher -> CoinWasherNode(i, g, messageCounter, this.random, this.logger)
-                NodeTypes.Revive -> ReviveNode(i, g, messageCounter, this.random, this.logger)
-                NodeTypes.ParticipantDisc -> ParticipantNodeAlt(i, g, messageCounter, this.random, this.logger)
+                g.addChannel(nodes[nodeIds[0]], nodes[nodeIds[1]], balances[0], balances[1])
             }
 
-            g.graph.addVertex(n)
-            nodes.add(n)
-        }
-        
-        val edgePattern = "\\d+-\\d+"
-        while (graphFileReader.hasNext(edgePattern)) {
-            val edgeString = graphFileReader.next(edgePattern)
-            val nodeIds = edgeString.split("-").map { it.toInt() }
-            val balances = graphFileReader.next(edgePattern).split("-").map { it.toInt() }
-
-            g.addChannel(nodes[nodeIds[0]], nodes[nodeIds[1]], balances[0], balances[1])
+            return GraphHolder(g, nodes, nodeType, random, logger)
         }
 
-        this.nodes = nodes
+        fun createGraphHolderFromLightningTopology (nodeFileName: String, channelFileName: String, nodeType: NodeTypes, random: SeededRandom): GraphHolder {
+            val logger = Logger()
+            val translator = TopologyTranslator(nodeFileName, channelFileName, nodeType, random, logger)
+            val (g, nodes) = translator.translate()
+
+            return GraphHolder(g, nodes, nodeType, random, logger)
+        }
+
+        private fun txtGraphToGraphViz(resourceName: String, fileName: String) {
+            var g = GraphVizGraph(resourceName).directed().graphAttr().with("splines", true)
+            val graphFileReader = Scanner(File(resourceName))
+            graphFileReader.nextLine()
+            graphFileReader.nextLine()
+
+            val edgePattern = "\\d+-\\d+"
+            while (graphFileReader.hasNext(edgePattern)) {
+                val edgeString = graphFileReader.next(edgePattern)
+                val nodeIds = edgeString.split("-")
+                val balances = graphFileReader.next(edgePattern).split("-")
+
+                var i = 0
+                var j = 1
+                if (balances[1].toInt() > balances[0].toInt()) {
+                    i = 1
+                    j = 0
+                }
+
+                var node1 = GraphVizNode(nodeIds[i]).link(
+                    GraphTo(GraphVizNode(nodeIds[j])).with("headlabel", balances[j]).with("taillabel", balances[i])
+                )
+                
+                g = g.with(node1)
+            }
+
+            graphFileReader.close()
+
+            Graphviz.fromGraph(g).width(400).render(Format.SVG).toFile(File("visualisation/" + fileName + "_vis.svg"))
+        }
     }
 
     fun getMessageDelay (): Long {
@@ -134,11 +160,14 @@ class GraphHolder {
             } else if (event is StartEvent) {
                 if (trialName != "no_rebalancing") {
                     val simulInput = when (event.desc.step) {
-                        Steps.Discover -> (event.desc.recipient as Rebalancer).startSubAlgos(algoSettings)
+                        Steps.Discover -> when (this.nodeType) {
+                            NodeTypes.ParticipantDisc -> (event.desc.recipient as ParticipantNodeAlt).findParticipants(algoSettings)
+                            else -> (event.desc.recipient as Rebalancer).startSubAlgos(algoSettings)
+                        }
                         Steps.Rebalance -> {
                             when (this.nodeType) {
                                 NodeTypes.CoinWasher, NodeTypes.Revive -> (event.desc.recipient as Rebalancer).rebalance(event)
-                                else -> throw IllegalStateException("Unsupported node type for step Rebalance!")
+                                else -> null
                             } 
                         }
                     }
@@ -208,6 +237,11 @@ class GraphHolder {
         if (!generateTransactions) {
             checkConservationOfCoins()
             calculateScore()
+
+            val nOfParticipants = (nodes[startNodeIndex] as ParticipantNodeAlt).result?.finalParticipants?.size
+            println()
+            println("Number of participants: $nOfParticipants/${nodes.size}")
+            println()
         }
 
         var nOfParticipantAwake = 0
@@ -336,36 +370,5 @@ class GraphHolder {
             println("$channel, Ongoing=${channel.hasOngoingTx()}, demand=${channel.getCurrentDemand(null)}")
         }
         println()
-    }
-
-    private fun txtGraphToGraphViz(resourceName: String, fileName: String) {
-        var g = GraphVizGraph(resourceName).directed().graphAttr().with("splines", true)
-        val graphFileReader = Scanner(File(resourceName))
-        graphFileReader.nextLine()
-        graphFileReader.nextLine()
-
-        val edgePattern = "\\d+-\\d+"
-        while (graphFileReader.hasNext(edgePattern)) {
-            val edgeString = graphFileReader.next(edgePattern)
-            val nodeIds = edgeString.split("-")
-            val balances = graphFileReader.next(edgePattern).split("-")
-
-            var i = 0
-            var j = 1
-            if (balances[1].toInt() > balances[0].toInt()) {
-                i = 1
-                j = 0
-            }
-
-            var node1 = GraphVizNode(nodeIds[i]).link(
-                GraphTo(GraphVizNode(nodeIds[j])).with("headlabel", balances[j]).with("taillabel", balances[i])
-            )
-            
-            g = g.with(node1)
-        }
-
-        graphFileReader.close()
-
-        Graphviz.fromGraph(g).width(400).render(Format.SVG).toFile(File("visualisation/" + fileName + "_vis.svg"))
     }
 }

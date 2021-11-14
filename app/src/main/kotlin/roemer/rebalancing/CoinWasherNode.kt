@@ -654,6 +654,9 @@ class CoinWasherNode(id: Int, g: ChannelNetwork, messageCounter: MessageCounter,
                 }
             }
 
+            val nOfOwnedCycles = cycleChannelPairsMap.filter {(_, value) -> value.completed}.size
+            logger.debug("I am part of ${tagTransactionMap.size} cycles owned by other nodes and I own $nOfOwnedCycles cycles")
+
             roundStateMachine.state = RoundState.EXEC
 
             checkIfExecutionSafe()
