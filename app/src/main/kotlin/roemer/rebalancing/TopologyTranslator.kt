@@ -13,7 +13,7 @@ import roemer.revive.ReviveNode
 
 import org.apache.commons.math3.distribution.ExponentialDistribution
 
-class TopologyTranslator (val nodeFileName: String, val channelFileName: String, val nodeType: NodeTypes, val random: SeededRandom, val logger: Logger) {
+class TopologyTranslator (val nodeFileName: String, val channelFileName: String, val nodeType: NodeTypes, val random: SeededRandom, val logger: Logger, val counter: Counter) {
     val nodeResourcePath: String
     val channelResourcePath: String
     val channelCapacityDistribution = ExponentialDistribution(this.random.apacheGenerator, 1.0)
@@ -39,8 +39,6 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String,
         val nodeIdToIndexMap = HashMap<String, Node>()
         val g = ChannelNetwork()
 
-        val messageCounter = MessageCounter()
-
         var duplicateNodeId = 0
         for (i in 0 until jsonNodes.size) {
             if (nodeIdToIndexMap.containsKey(jsonNodes[i].id)) {
@@ -49,9 +47,9 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String,
             }
 
             val n = when (this.nodeType) {
-                NodeTypes.CoinWasher -> CoinWasherNode(i, g, messageCounter, this.random, this.logger)
-                NodeTypes.Revive -> ReviveNode(i, g, messageCounter, this.random, this.logger)
-                NodeTypes.ParticipantDisc -> ParticipantNodeAlt(i, g, messageCounter, this.random, this.logger)
+                NodeTypes.CoinWasher -> CoinWasherNode(i, g, counter, this.random, this.logger)
+                NodeTypes.Revive -> ReviveNode(i, g, counter, this.random, this.logger)
+                NodeTypes.ParticipantDisc -> ParticipantNodeAlt(i, g, counter, this.random, this.logger)
             }
             g.graph.addVertex(n)
             nodes.add(n)

@@ -16,10 +16,20 @@ fun main() {
 
     // assert(tree1Dig contentEquals tree2Dig)
 
-    val graph = GraphHolder.createGraphHolderFromTxtGraph("difficult_graph.txt", NodeTypes.CoinWasher, SeededRandom(21))
+    val statistics = Statistics()
+    for (i in 0 until 1000) {
+        val counter = Counter()
+        val graph = GraphHolder.createGraphHolderFromTxtGraph("difficult_graph.txt", NodeTypes.CoinWasher, SeededRandom(i), counter)
+
+        val algoSettings = mapOf("hopCount" to 3, "maxNumberOfInvites" to 5, "percentageOfLeaders" to 0.0001F)
+        graph.start(algoSettings, false, "coinwasher")
+        statistics.process(counter)
+    }
+
+    statistics.printStatistics()
+    
     //val graph = GraphHolder("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.CoinWasher)
-    val algoSettings = mapOf("hopCount" to 3, "maxNumberOfInvites" to 5, "percentageOfLeaders" to 0.5F)
-    graph.start(algoSettings, false, "coinwasher")
+
     
     return
 
@@ -30,17 +40,20 @@ fun main() {
     )
     runBlocking {
         for (trial in trials) {
-            launch(Dispatchers.Default) { 
-                println("Starting $trial")
-                runTrial(trial) 
+            for (seed in 0 until 100) {
+                launch(Dispatchers.Default) { 
+                    println("Starting $trial")
+                    runTrial(trial, seed) 
+                }
             }
+
         }
     }
 
     // LpSolveDemo().demo()
 }
 
-suspend fun runTrial(trial: String) {
+suspend fun runTrial(trial: String, seed: Int) {
     val nodeType = when (trial) {
         "no_rebalancing" -> NodeTypes.ParticipantDisc
         "coinwasher" -> NodeTypes.CoinWasher
@@ -48,7 +61,7 @@ suspend fun runTrial(trial: String) {
         else -> throw IllegalArgumentException("Trial name should match to a NodeType!")
     }
 
-    val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", nodeType, SeededRandom(20))
+    val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", nodeType, SeededRandom(seed), Counter())
 
     val algoSettings = mapOf("hopCount" to 3, "maxNumberOfInvites" to 5, "percentageOfLeaders" to 0.5F)
     graph.start(algoSettings, true, trial)

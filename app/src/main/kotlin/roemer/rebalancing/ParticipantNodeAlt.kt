@@ -6,7 +6,7 @@ data class ParticipantFindingResult (
     val acceptedEdges: Set<PaymentChannel>
 )
 
-open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, messageCounter: MessageCounter, random: SeededRandom, globalLogger: Logger, val randomDeny: Boolean = false) : Node(id, g, messageCounter, random, globalLogger) {
+open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, counter: Counter, random: SeededRandom, globalLogger: Logger, val randomDeny: Boolean = false) : Node(id, g, counter, random, globalLogger) {
     var started = false
     var invitesSend = false
     var executionId: Tag? = null

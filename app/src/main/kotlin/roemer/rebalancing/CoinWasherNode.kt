@@ -36,7 +36,7 @@ data class TagDemandHTLCPair(
     }
 }
 
-class CoinWasherNode(id: Int, g: ChannelNetwork, messageCounter: MessageCounter, random: SeededRandom, globalLogger: Logger) : ParticipantNodeAlt(id, g, messageCounter, random, globalLogger), Rebalancer {
+class CoinWasherNode(id: Int, g: ChannelNetwork, counter: Counter, random: SeededRandom, globalLogger: Logger) : ParticipantNodeAlt(id, g, counter, random, globalLogger), Rebalancer {
     val digest = MessageDigest.getInstance("SHA-256");
     
     // Needs to be reset every time the algorithm runs
@@ -654,7 +654,8 @@ class CoinWasherNode(id: Int, g: ChannelNetwork, messageCounter: MessageCounter,
                 }
             }
 
-            val nOfOwnedCycles = cycleChannelPairsMap.filter {(_, value) -> value.completed}.size
+            val nOfOwnedCycles = cycleChannelPairsMap.filter {(_, value) -> value.completed && value.demand > 0}.size
+            this.counter.countOwnedCycles(nOfOwnedCycles)
             logger.debug("I am part of ${tagTransactionMap.size} cycles owned by other nodes and I own $nOfOwnedCycles cycles")
 
             roundStateMachine.state = RoundState.EXEC
@@ -725,7 +726,9 @@ class CoinWasherNode(id: Int, g: ChannelNetwork, messageCounter: MessageCounter,
 
         if (!forwardedNextRoundMessage) {
             for (channel in (outgoingDemandEdges union incomingDemandEdges)) {
-                sendMessage(NextRoundMessage(MessageTypes.NEXT_ROUND_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), executionId!!))
+                if (channel != mes.channel) {
+                    sendMessage(NextRoundMessage(MessageTypes.NEXT_ROUND_R, this, channel.getOppositeNode(this), channel, getRoundStarter(), executionId!!))
+                }
             }
             forwardedNextRoundMessage = true
         }

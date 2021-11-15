@@ -32,7 +32,8 @@ class GraphHolder (
     val nodes: List<Node>,
     val nodeType: NodeTypes,
     val random: SeededRandom,
-    val logger: Logger
+    val logger: Logger,
+    val counter: Counter
 ) {
     val paymentChannels: MutableList<PaymentChannel> = ArrayList()
     val channelBalances: MutableMap<Pair<Node, PaymentChannel>, Int> = HashMap()
@@ -42,7 +43,7 @@ class GraphHolder (
     val maxTransactions = 5000 // Should be 10000
 
     companion object { 
-        fun createGraphHolderFromTxtGraph (txtGraphFileName: String, nodeType: NodeTypes, random: SeededRandom): GraphHolder {
+        fun createGraphHolderFromTxtGraph (txtGraphFileName: String, nodeType: NodeTypes, random: SeededRandom, counter: Counter): GraphHolder {
             val g = ChannelNetwork()
             val logger = Logger()
 
@@ -54,13 +55,12 @@ class GraphHolder (
             val nOfNodes = graphFileReader.nextInt()
             graphFileReader.nextLine()
 
-            val messageCounter = MessageCounter()
             val nodes: MutableList<Node> = ArrayList()
             for (i in 0 until nOfNodes) {
                 val n = when (nodeType) {
-                    NodeTypes.CoinWasher -> CoinWasherNode(i, g, messageCounter, random, logger)
-                    NodeTypes.Revive -> ReviveNode(i, g, messageCounter, random, logger)
-                    NodeTypes.ParticipantDisc -> ParticipantNodeAlt(i, g, messageCounter, random, logger)
+                    NodeTypes.CoinWasher -> CoinWasherNode(i, g, counter, random, logger)
+                    NodeTypes.Revive -> ReviveNode(i, g, counter, random, logger)
+                    NodeTypes.ParticipantDisc -> ParticipantNodeAlt(i, g, counter, random, logger)
                 }
 
                 g.graph.addVertex(n)
@@ -76,15 +76,15 @@ class GraphHolder (
                 g.addChannel(nodes[nodeIds[0]], nodes[nodeIds[1]], balances[0], balances[1])
             }
 
-            return GraphHolder(g, nodes, nodeType, random, logger)
+            return GraphHolder(g, nodes, nodeType, random, logger, counter)
         }
 
-        fun createGraphHolderFromLightningTopology (nodeFileName: String, channelFileName: String, nodeType: NodeTypes, random: SeededRandom): GraphHolder {
+        fun createGraphHolderFromLightningTopology (nodeFileName: String, channelFileName: String, nodeType: NodeTypes, random: SeededRandom, counter: Counter): GraphHolder {
             val logger = Logger()
-            val translator = TopologyTranslator(nodeFileName, channelFileName, nodeType, random, logger)
+            val translator = TopologyTranslator(nodeFileName, channelFileName, nodeType, random, logger, counter)
             val (g, nodes) = translator.translate()
 
-            return GraphHolder(g, nodes, nodeType, random, logger)
+            return GraphHolder(g, nodes, nodeType, random, logger, counter)
         }
 
         private fun txtGraphToGraphViz(resourceName: String, fileName: String) {
@@ -289,15 +289,13 @@ class GraphHolder (
         println()
         println("Total time: ${now / 1000L / 60L / 60L} hours or ${now / 1000L / 60L} minutes or ${now / 1000L} seconds")
         println()
-        nodes[0].messageCounter.printCounts()
+        nodes[0].counter.printCounts()
 
         printChannelBalances()
 
         if (generateTransactions) {
             saveData(trialName, sampleTimeList, successRatio, networkImbalance)
         }
-
-        println("Program has finished")
     }
 
     private fun <T> saveData(trialName: String, vararg dataLists: List<T>) {  

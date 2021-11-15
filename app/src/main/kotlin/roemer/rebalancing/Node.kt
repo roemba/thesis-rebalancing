@@ -10,7 +10,7 @@ import java.util.LinkedList
 import java.util.Queue
 import kotlin.math.abs
 
-open class Node(val id: Int, val g: ChannelNetwork, val messageCounter: MessageCounter,  val random: SeededRandom, val globalLogger: Logger) {
+open class Node(val id: Int, val g: ChannelNetwork, val counter: Counter,  val random: SeededRandom, val globalLogger: Logger) {
     val paymentChannels: MutableList<PaymentChannel> = ArrayList()
     val ongoingPayments: MutableMap<Payment, LocalPayment> = HashMap()
     val logger = this.globalLogger.getNodeLogger(this)
@@ -100,7 +100,7 @@ open class Node(val id: Int, val g: ChannelNetwork, val messageCounter: MessageC
         }
 
         // Log number of messages
-        this.messageCounter.count(message)
+        this.counter.countMessage(message)
 
         if (this.canLogMessage(message)) {
             logger.debug("Send $message")

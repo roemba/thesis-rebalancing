@@ -10,7 +10,7 @@ enum class State {
     WAITING, CONFIRMATION, COLLECTION, SIGNING
 }
 
-class ReviveNode(id: Int, g: ChannelNetwork, messageCounter: MessageCounter, random: SeededRandom, globalLogger: Logger) : ParticipantNodeAlt(id, g, messageCounter, random, globalLogger), Rebalancer {
+class ReviveNode(id: Int, g: ChannelNetwork, counter: Counter, random: SeededRandom, globalLogger: Logger) : ParticipantNodeAlt(id, g, counter, random, globalLogger), Rebalancer {
     var orderOfStarting: List<Tag>? = null
     var channelDemands: Map<PaymentChannel, Int> = HashMap()
     var outgoingDemandEdges: Set<PaymentChannel> = HashSet()
