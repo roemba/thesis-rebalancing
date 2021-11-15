@@ -41,3 +41,5 @@ app/bin/
 .vscode/settings.json
 venv/
 app/output_files/
+
+*.csv
