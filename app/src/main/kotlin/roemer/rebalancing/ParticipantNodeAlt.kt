@@ -22,7 +22,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, counter: Counter, rand
     var receivedResponses = 0
     var sendFinalList = false
     var result: ParticipantFindingResult? = null
-    lateinit var algoSettings: Map<String, Any>
+    lateinit var algoSettings: AlgoSettings
     
     override fun sortMessage (message: Message) {
         when (message.type) {
@@ -36,7 +36,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, counter: Counter, rand
         }
     }
 
-    fun findParticipants(algoSettings: Map<String, Any>): SimulationInput {
+    fun findParticipants(algoSettings: AlgoSettings): SimulationInput {
         if (this.isRunningAlgo) {
             throw IllegalStateException("Already running an algorithm, cannot start another")
         }
@@ -60,15 +60,14 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, counter: Counter, rand
 
         logger.info("Starting to find participants with execution id: $executionId and participant id: $anonId")
 
-        val maxNumberOfInvites = this.algoSettings["maxNumberOfInvites"] as Int
         for (channel in this.paymentChannels) {
             sendMessage(InviteParticipantMessage(
-                MessageTypes.INVITE_P, this, channel.getOppositeNode(this), channel, executionId!!, algoSettings["hopCount"] as Int, this.algoSettings
+                MessageTypes.INVITE_P, this, channel.getOppositeNode(this), channel, executionId!!, this.algoSettings.hopCount, this.algoSettings
             ))
             invitedEdges.add(channel)
             nOfExpectedResponses++
 
-            if (invitedEdges.size >= maxNumberOfInvites) {
+            if (invitedEdges.size >= this.algoSettings.maxNumberOfInvites) {
                 break
             }
         }
@@ -109,7 +108,6 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, counter: Counter, rand
         if (!this.invitesSend && mes.hopCount - 1 > 0 && (this.paymentChannels.size - deniedEdges.size) > 1) {
             this.invitesSend = true
             parentEdge = mes.channel
-            val maxNumberOfInvites = this.algoSettings["maxNumberOfInvites"] as Int
             for (channel in this.paymentChannels) {
                 if (channel !== parentEdge && !(channel in deniedEdges)) {
                     sendMessage(InviteParticipantMessage(
@@ -118,7 +116,7 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, counter: Counter, rand
                     invitedEdges.add(channel)
                     nOfExpectedResponses++
 
-                    if (invitedEdges.size >= maxNumberOfInvites) {
+                    if (invitedEdges.size >= this.algoSettings.maxNumberOfInvites) {
                         break
                     }
                 }

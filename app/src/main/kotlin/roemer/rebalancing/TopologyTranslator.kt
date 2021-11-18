@@ -13,10 +13,10 @@ import roemer.revive.ReviveNode
 
 import org.apache.commons.math3.distribution.ExponentialDistribution
 
-class TopologyTranslator (val nodeFileName: String, val channelFileName: String, val nodeType: NodeTypes, val random: SeededRandom, val logger: Logger, val counter: Counter) {
+class TopologyTranslator (val nodeFileName: String, val channelFileName: String, val nodeType: NodeTypes, val random: SeededRandom, val logger: Logger, val counter: Counter, val equallyBalanced: Boolean) {
     val nodeResourcePath: String
     val channelResourcePath: String
-    val channelCapacityDistribution = ExponentialDistribution(this.random.apacheGenerator, 1.0)
+    val channelCapacityDistribution = ExponentialDistribution(SeededRandom(2).apacheGenerator, 1.0)//ExponentialDistribution(this.random.apacheGenerator, 1.0)
     val EURO_SATOSHI_EXC_RATE = 1731
 
     init {
@@ -69,9 +69,10 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String,
                 println("Self-loop found!")
             }
 
-            val channelBalance = (channelCapacityDistribution.sample() * EURO_SATOSHI_EXC_RATE * 10).toInt() + (5 * this.EURO_SATOSHI_EXC_RATE) // Used to do *10
+            val channelBalance1 = this.getChannelBalance()
+            val channelBalance2 = if (this.equallyBalanced) channelBalance1 else this.getChannelBalance()
             // if (i % 100 == 0) { println("Channel has $channelBalance satoshis or ${channelBalance/this.EURO_SATOSHI_EXC_RATE}") }
-            g.addChannel(srcNode, dstNode, channelBalance, channelBalance)
+            g.addChannel(srcNode, dstNode, channelBalance1, channelBalance2)
             i += 1
         }
 
@@ -81,14 +82,18 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String,
         return Pair(g, nodes)
     }
 
+    private fun getChannelBalance(): Int {
+        return (channelCapacityDistribution.sample() * EURO_SATOSHI_EXC_RATE * 10).toInt() + (5 * this.EURO_SATOSHI_EXC_RATE) // Used to do *10
+    }
+
     fun getLargestConnectedComponent (g: ChannelNetwork): MutableList<Node> {
         val scAlg = KosarajuStrongConnectivityInspector<Node, DefaultWeightedEdge>(g.graph)
         val stronglyConnectedSubgraphs = scAlg.getStronglyConnectedComponents();
 
-        println("Strongly connected components:")
-        for (i in 0 until stronglyConnectedSubgraphs.size) {
-            println("$i - Size: " + stronglyConnectedSubgraphs[i].vertexSet().size)
-        }
+        // println("Strongly connected components:")
+        // for (i in 0 until stronglyConnectedSubgraphs.size) {
+        //     println("$i - Size: " + stronglyConnectedSubgraphs[i].vertexSet().size)
+        // }
 
         val largestVertexSet = stronglyConnectedSubgraphs.map { graph -> graph.vertexSet() }.maxByOrNull { nodes -> nodes.size }
         println("Continuing with largest component with ${largestVertexSet!!.size} nodes")

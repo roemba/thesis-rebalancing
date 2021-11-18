@@ -52,7 +52,7 @@ class ReviveNode(id: Int, g: ChannelNetwork, counter: Counter, random: SeededRan
         return this.rebalancingAwake
     }
 
-    override fun startSubAlgos(algoSettings: Map<String, Any>): SimulationInput? {
+    override fun startSubAlgos(algoSettings: AlgoSettings): SimulationInput? {
         if (this.isRunningAlgo) {
             logger.error("Already rebalancing")
             return null

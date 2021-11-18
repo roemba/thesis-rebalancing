@@ -18,6 +18,8 @@ import guru.nidi.graphviz.engine.Format
 import roemer.revive.ReviveNode
 import org.jgrapht.graph.DefaultWeightedEdge
 import org.apache.commons.math3.distribution.ExponentialDistribution
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 enum class NodeTypes {
     ParticipantDisc, CoinWasher, Revive
@@ -79,9 +81,9 @@ class GraphHolder (
             return GraphHolder(g, nodes, nodeType, random, logger, counter)
         }
 
-        fun createGraphHolderFromLightningTopology (nodeFileName: String, channelFileName: String, nodeType: NodeTypes, random: SeededRandom, counter: Counter): GraphHolder {
+        fun createGraphHolderFromLightningTopology (nodeFileName: String, channelFileName: String, nodeType: NodeTypes, random: SeededRandom, counter: Counter, equallyBalanced: Boolean): GraphHolder {
             val logger = Logger()
-            val translator = TopologyTranslator(nodeFileName, channelFileName, nodeType, random, logger, counter)
+            val translator = TopologyTranslator(nodeFileName, channelFileName, nodeType, random, logger, counter, equallyBalanced)
             val (g, nodes) = translator.translate()
 
             return GraphHolder(g, nodes, nodeType, random, logger, counter)
@@ -124,12 +126,12 @@ class GraphHolder (
         return delay.toLong() // SeededRandom.random.nextLong(1L, 200L)
     }
 
-    fun start (algoSettings: Map<String, Any>, generateTransactions: Boolean, trialName: String) {
+    suspend fun start (algoSettings: AlgoSettings, dynamicRun: Boolean, trial: Trials, randomStartNode: Boolean, writeMutex: Mutex, fileName: String, debug: Boolean = false) {
         // Statistics and logging
-        if (!generateTransactions) {
+        if (!dynamicRun && (trial == Trials.STATIC_REBALANCING_COMPARISON || trial == Trials.SCORE_VS_PERC_LEADERS)) {
             saveChannelBalances()
         }
-        printChannelBalances()
+        //printChannelBalances()
         val samplingInterval = 1000L // In ms
         val sampleTimeList: MutableList<Long> = ArrayList()
         
@@ -142,8 +144,8 @@ class GraphHolder (
         val latestArrivalTimePerNodeChannelID: MutableMap<String, Long> = HashMap()
         val txGen = TransactionGenerator(nodes, 1, this.maxTransactions, this.logger)
 
-        val startNodeIndex = 0
-        if (generateTransactions) {
+        val startNodeIndex = if (randomStartNode) this.random.random.nextInt(nodes.size) else 10
+        if (dynamicRun) {
             eventQueue.add(txGen.generateTransactions(now))
         } else {
             eventQueue.add(StartEvent(0, this.random, StartDescription(Steps.Discover, nodes[startNodeIndex])))
@@ -158,7 +160,7 @@ class GraphHolder (
             if (event is MessageEvent) {
                 simulInputs.add(event.message.recipient.receiveMessage(event.message))
             } else if (event is StartEvent) {
-                if (trialName != "no_rebalancing") {
+                if (trial != Trials.NO_REBALANCING) {
                     val simulInput = when (event.desc.step) {
                         Steps.Discover -> when (this.nodeType) {
                             NodeTypes.ParticipantDisc -> (event.desc.recipient as ParticipantNodeAlt).findParticipants(algoSettings)
@@ -210,7 +212,7 @@ class GraphHolder (
                 }
             }
 
-            if (now % samplingInterval == 0L) {
+            if (trial == Trials.DYNAMIC_REBALANCING_COMPARISON && now % samplingInterval == 0L) {
                 // Collect all statistical data here
                 sampleTimeList.add(now)
 
@@ -234,77 +236,94 @@ class GraphHolder (
         }
 
         // Statistic and logging
-        if (!generateTransactions) {
-            checkConservationOfCoins()
-            calculateScore()
+        if (!dynamicRun) {
+            if (trial == Trials.STATIC_REBALANCING_COMPARISON) {
+                checkConservationOfCoins()
+                calculateScore()
+            }
 
-            val nOfParticipants = (nodes[startNodeIndex] as ParticipantNodeAlt).result?.finalParticipants?.size
-            println()
-            println("Number of participants: $nOfParticipants/${nodes.size}")
-            println()
+            if (debug) {
+                val nOfParticipants = (nodes[startNodeIndex] as ParticipantNodeAlt).result?.finalParticipants?.size
+                println()
+                println("Number of participants: $nOfParticipants/${nodes.size}")
+                println()
+            }
+
         }
 
-        var nOfParticipantAwake = 0
-        var nOfRebalancingAwake = 0
-        var nOfNodesWithOngoingTransactions = 0
-        var nOfTransactionsComplete = 0
-        var nOfTransactionsFailed = 0
-        var totalSpecialCounter = 0
-        for (i in 0 until nodes.size) {
-            val node = nodes[i] as ParticipantNodeAlt
-            totalSpecialCounter += node.specialCounter
-            nOfTransactionsComplete += node.transactionsCompleted
-            nOfTransactionsFailed += node.transactionsFailed
-            val giniCoefficient = node.getGiniCoefficient()
+        if (debug) {
+            var nOfParticipantAwake = 0
+            var nOfRebalancingAwake = 0
+            var nOfNodesWithOngoingTransactions = 0
+            var nOfTransactionsComplete = 0
+            var nOfTransactionsFailed = 0
+            var totalSpecialCounter = 0
+            for (i in 0 until nodes.size) {
+                val node = nodes[i] as ParticipantNodeAlt
+                totalSpecialCounter += node.specialCounter
+                nOfTransactionsComplete += node.transactionsCompleted
+                nOfTransactionsFailed += node.transactionsFailed
+                val giniCoefficient = node.getGiniCoefficient()
 
-            // if (giniCoefficient > 0.0001) {
-            //     println("$node has coefficient of $giniCoefficient")
-            // }
-            
-            if (node.ongoingPayments.isNotEmpty()) {
-                println("$node has ongoing payments")
-                nOfNodesWithOngoingTransactions++
-            }
+                // if (giniCoefficient > 0.0001) {
+                //     println("$node has coefficient of $giniCoefficient")
+                // }
+                
+                if (node.ongoingPayments.isNotEmpty()) {
+                    println("$node has ongoing payments")
+                    nOfNodesWithOngoingTransactions++
+                }
 
-            if (node.discoverAwake) {
-                println("$node is still doing part discovery")
-                nOfParticipantAwake++
-            }
+                if (node.discoverAwake) {
+                    println("$node is still doing part discovery")
+                    nOfParticipantAwake++
+                }
 
-            if (nodes[i] is Rebalancer) {
-                val t = nodes[i] as Rebalancer
-                if (t.isRebalancingAwake()) {
-                    println("$node is still rebalancing")
-                    nOfRebalancingAwake++
+                if (nodes[i] is Rebalancer) {
+                    val t = nodes[i] as Rebalancer
+                    if (t.isRebalancingAwake()) {
+                        println("$node is still rebalancing")
+                        nOfRebalancingAwake++
+                    }
                 }
             }
+            println("Awake transaction nodes: ${nOfNodesWithOngoingTransactions}/${nodes.size}")
+            println("Awake participant nodes: ${nOfParticipantAwake}")
+            println("Awake rebalancing nodes: ${nOfRebalancingAwake}")
+            println("Special counter: ${totalSpecialCounter}")
+            println()
+            println("${nOfTransactionsComplete}/${this.maxTransactions} transactions completed")
+            println("${nOfTransactionsFailed}/${this.maxTransactions} transactions failed")
+            println()
+            println("Total time: ${now / 1000L / 60L / 60L} hours or ${now / 1000L / 60L} minutes or ${now / 1000L} seconds")
+            println()
+            this.counter.getCounts()
+
+            printChannelBalances()
         }
-        println("Awake transaction nodes: ${nOfNodesWithOngoingTransactions}/${nodes.size}")
-        println("Awake participant nodes: ${nOfParticipantAwake}")
-        println("Awake rebalancing nodes: ${nOfRebalancingAwake}")
-        println("Special counter: ${totalSpecialCounter}")
-        println()
-        println("${nOfTransactionsComplete}/${this.maxTransactions} transactions completed")
-        println("${nOfTransactionsFailed}/${this.maxTransactions} transactions failed")
-        println()
-        println("Total time: ${now / 1000L / 60L / 60L} hours or ${now / 1000L / 60L} minutes or ${now / 1000L} seconds")
-        println()
-        nodes[0].counter.printCounts()
 
-        printChannelBalances()
-
-        if (generateTransactions) {
-            saveData(trialName, sampleTimeList, successRatio, networkImbalance)
+        if (dynamicRun && trial == Trials.DYNAMIC_REBALANCING_COMPARISON) {
+            saveData(algoSettings, writeMutex, fileName, mapOf("time" to sampleTimeList, "successRatio" to successRatio, "networkImbalance" to networkImbalance))
+        } else if (trial == Trials.PART_DISC) {
+            val nOfParticipants = (nodes[startNodeIndex] as ParticipantNodeAlt).result!!.finalParticipants.size
+            saveData(algoSettings, writeMutex, fileName, mapOf("nOfParticipants" to listOf(nOfParticipants)))
+        } else if (trial == Trials.SCORE_VS_PERC_LEADERS) {
+            val rebalancingScore = calculateScore()
+            val nOfRebalanceMessages = this.counter.getCounts().second
+            saveData(algoSettings, writeMutex, fileName, mapOf("totalDemandsMet" to listOf(rebalancingScore), "nOfRebalanceMes" to listOf(nOfRebalanceMessages)))
         }
     }
 
-    private fun <T> saveData(trialName: String, vararg dataLists: List<T>) {  
-        val fileWriter = FileWriter("output_files/${trialName}.csv", false)
-        val printWriter = PrintWriter(BufferedWriter(fileWriter))
+    suspend private fun saveData(algoSettings: AlgoSettings, writeMutex: Mutex, fileName: String, dataLists: Map<String, Collection<Any>>) {  
+        writeMutex.withLock {
+            val fileWriter = FileWriter(fileName, true)
+            val printWriter = PrintWriter(BufferedWriter(fileWriter))
 
-        printWriter.use { out -> 
-            for (list in dataLists) {
-                out.println(list.joinToString(","))
+            printWriter.use { out -> 
+                out.println("settings:${algoSettings.toFileName()}")
+                for ((key, value) in dataLists.entries) {
+                    out.println("$key:${value.joinToString(",")}")
+                }
             }
         }
     }
@@ -337,7 +356,7 @@ class GraphHolder (
         }
     }
 
-    private fun calculateScore() {
+    private fun calculateScore(): Int {
         var score = 0
         var printing = true
         println("Rebalancing success:")
@@ -355,6 +374,7 @@ class GraphHolder (
             score += channelScore
         }
         println("Total score: $score")
+        return score
     }
 
     private fun printChannelBalances() {

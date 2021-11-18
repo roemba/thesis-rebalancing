@@ -128,7 +128,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork, counter: Counter, random: Seede
         return this.rebalancingAwake
     }
 
-    override fun startSubAlgos(algoSettings: Map<String, Any>): SimulationInput? {
+    override fun startSubAlgos(algoSettings: AlgoSettings): SimulationInput? {
         if (this.isRunningAlgo) {
             logger.warn("Already running another algorithm, aborting...")
             return null
@@ -194,8 +194,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork, counter: Counter, random: Seede
         this.rebalancingAwake = true
         this.isRunningAlgo = true
 
-        val percentageOfLeaders = this.algoSettings["percentageOfLeaders"] as Float
-        this.maxRound = (this.orderOfStarting.size.toFloat() * percentageOfLeaders).roundToInt()
+        this.maxRound = (this.orderOfStarting.size.toFloat() * this.algoSettings.percentageOfLeaders).roundToInt()
 
         this.retrieveChannelDemands()
         logger.debug("${getRoundStarterAsNode()} is round starter")

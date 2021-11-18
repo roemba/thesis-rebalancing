@@ -17,7 +17,7 @@ class Counter {
         this.nOfCycles += nOfOwnedCycles
     }
 
-    fun printCounts() {
+    fun getCounts(print: Boolean = true): Pair<Int, Int> {
         println("Message counts per type:")
         var partSum = 0
         var rebalanceSum = 0
@@ -36,6 +36,8 @@ class Counter {
         println("Total participant mes: $partSum")
         println("Total rebalance mes: $rebalanceSum")
         println("")
+
+        return Pair(partSum, rebalanceSum)
     }
 }
 
