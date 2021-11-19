@@ -119,7 +119,9 @@ open class Node(val id: Int, val g: ChannelNetwork, val counter: Counter,  val r
         // Process any unprocessed messages
         var nOfProcessedMessages: Int
         var totalNumberOfProcessedMessages = 0
+        var i = 1
         do {
+            logger.debug("Start processing unprocessed messages. I already did this loop $i times")
             val copyOfList = this.unprocessedMessages.toMutableList()
             this.unprocessedMessages = ArrayList()
             nOfProcessedMessages = 0
@@ -137,6 +139,7 @@ open class Node(val id: Int, val g: ChannelNetwork, val counter: Counter,  val r
             }
 
             totalNumberOfProcessedMessages += nOfProcessedMessages
+            i++
         } while (nOfProcessedMessages != 0) // If a message gets processed, other unprocessable messages might also be processable now so we have to try again
 
         if (totalNumberOfProcessedMessages != 0) {

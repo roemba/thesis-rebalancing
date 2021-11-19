@@ -43,3 +43,5 @@ venv/
 app/output_files/
 
 *.csv
+
+*.pdf

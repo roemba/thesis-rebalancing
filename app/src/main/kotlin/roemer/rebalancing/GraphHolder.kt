@@ -9,6 +9,7 @@ import java.util.PriorityQueue
 import java.util.regex.Pattern
 import java.time.Instant
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.collections.ArrayList
 import guru.nidi.graphviz.model.Factory.graph as GraphVizGraph
 import guru.nidi.graphviz.model.Factory.node as GraphVizNode
@@ -144,7 +145,7 @@ class GraphHolder (
         val latestArrivalTimePerNodeChannelID: MutableMap<String, Long> = HashMap()
         val txGen = TransactionGenerator(nodes, 1, this.maxTransactions, this.logger)
 
-        val startNodeIndex = if (randomStartNode) this.random.random.nextInt(nodes.size) else 10
+        val startNodeIndex = if (randomStartNode) this.random.random.nextInt(nodes.size) else min(10, nodes.size - 1)
         if (dynamicRun) {
             eventQueue.add(txGen.generateTransactions(now))
         } else {
@@ -236,19 +237,16 @@ class GraphHolder (
         }
 
         // Statistic and logging
-        if (!dynamicRun) {
+        if (!dynamicRun && debug) {
             if (trial == Trials.STATIC_REBALANCING_COMPARISON) {
                 checkConservationOfCoins()
                 calculateScore()
             }
 
-            if (debug) {
-                val nOfParticipants = (nodes[startNodeIndex] as ParticipantNodeAlt).result?.finalParticipants?.size
-                println()
-                println("Number of participants: $nOfParticipants/${nodes.size}")
-                println()
-            }
-
+            val nOfParticipants = (nodes[startNodeIndex] as ParticipantNodeAlt).result?.finalParticipants?.size
+            println()
+            println("Number of participants: $nOfParticipants/${nodes.size}")
+            println()
         }
 
         if (debug) {
@@ -303,24 +301,28 @@ class GraphHolder (
         }
 
         if (dynamicRun && trial == Trials.DYNAMIC_REBALANCING_COMPARISON) {
-            saveData(algoSettings, writeMutex, fileName, mapOf("time" to sampleTimeList, "successRatio" to successRatio, "networkImbalance" to networkImbalance))
+            saveData(algoSettings.toFileName(), writeMutex, fileName, mapOf("time" to sampleTimeList, "successRatio" to successRatio, "networkImbalance" to networkImbalance))
         } else if (trial == Trials.PART_DISC) {
             val nOfParticipants = (nodes[startNodeIndex] as ParticipantNodeAlt).result!!.finalParticipants.size
-            saveData(algoSettings, writeMutex, fileName, mapOf("nOfParticipants" to listOf(nOfParticipants)))
+            saveData(algoSettings.toFileName(), writeMutex, fileName, mapOf("nOfParticipants" to listOf(nOfParticipants)))
         } else if (trial == Trials.SCORE_VS_PERC_LEADERS) {
             val rebalancingScore = calculateScore()
             val nOfRebalanceMessages = this.counter.getCounts().second
-            saveData(algoSettings, writeMutex, fileName, mapOf("totalDemandsMet" to listOf(rebalancingScore), "nOfRebalanceMes" to listOf(nOfRebalanceMessages)))
+            saveData(algoSettings.toFileName(), writeMutex, fileName, mapOf("totalDemandsMet" to listOf(rebalancingScore), "nOfRebalanceMes" to listOf(nOfRebalanceMessages)))
+        } else if (trial == Trials.STATIC_REBALANCING_COMPARISON) {
+            val rebalancingScore = calculateScore()
+            val nOfRebalanceMessages = this.counter.getCounts().second
+            saveData(this.nodeType.toString(), writeMutex, fileName, mapOf("totalDemandsMet" to listOf(rebalancingScore), "nOfRebalanceMes" to listOf(nOfRebalanceMessages), "time" to listOf(now)))
         }
     }
 
-    suspend private fun saveData(algoSettings: AlgoSettings, writeMutex: Mutex, fileName: String, dataLists: Map<String, Collection<Any>>) {  
+    suspend private fun saveData(settings: String, writeMutex: Mutex, fileName: String, dataLists: Map<String, Collection<Any>>) {  
         writeMutex.withLock {
             val fileWriter = FileWriter(fileName, true)
             val printWriter = PrintWriter(BufferedWriter(fileWriter))
 
             printWriter.use { out -> 
-                out.println("settings:${algoSettings.toFileName()}")
+                out.println("settings:${settings}")
                 for ((key, value) in dataLists.entries) {
                     out.println("$key:${value.joinToString(",")}")
                 }
