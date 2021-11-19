@@ -299,7 +299,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork, counter: Counter, random: Seede
             receivedRequests.removeIf{m -> m.channel == mes.channel} // Make sure that no requests are in receivedRequests if we find the cycle
             if (!this.iStartedRound() && receivedRequests.isEmpty()) {
                 logger.error("Received request is never allowed to be empty after checking for cycles if not round starter!")
-                throw IllegalStateException("$this - Received request is never allowed to be empty after checking for cycles if not round starter!")
+                throw IllegalStateException("$this - ${this.random.seed} Received request is never allowed to be empty after checking for cycles if not round starter!")
             }
 
             val cycleTag = Tag.createTag(this)
@@ -419,6 +419,11 @@ class CoinWasherNode(id: Int, g: ChannelNetwork, counter: Counter, random: Seede
         if (mes.channel in sentSuccessChannel) {
             logger.debug("Already sent a SUCCESS over this channel, therefore ignoring UPDATE")
             return
+        }
+
+        if (this.receivedRequests.filter { it -> it.channel == mes.channel }.size == 0) {
+            logger.warn("Have not processed the REQUEST from this channel yet, deferring UPDATE...")
+            return sendMessage(mes)
         }
 
         if (!this.checkForCyclesAndNewTags(mes)) {
