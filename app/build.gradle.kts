@@ -9,6 +9,8 @@ group = "me.roemer"
 version = "1.0-SNAPSHOT"
 val arguments: MutableList<String> = ArrayList()
 arguments.add("-ea")
+arguments.add("-Xms1024m")
+arguments.add("-Xmx8192m")
 
 repositories {
     mavenCentral()
@@ -36,7 +38,7 @@ application {
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     kotlinOptions { 
-        jvmTarget = "11"
+        jvmTarget = "16"
     }
 }
 
