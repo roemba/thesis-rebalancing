@@ -129,6 +129,12 @@ class GraphHolder (
 
     suspend fun start (algoSettings: AlgoSettings, dynamicRun: Boolean, trial: Trials, randomStartNode: Boolean, writeMutex: Mutex, fileName: String, debug: Boolean = false) {
         // Statistics and logging
+        if (trial == Trials.PART_DISC || trial == Trials.DYNAMIC_REBALANCING_COMPARISON) {
+            for (node in nodes) {
+                node.paymentChannels.shuffle(this.random.random)
+            }
+        }
+
         if (!dynamicRun && (trial == Trials.STATIC_REBALANCING_COMPARISON || trial == Trials.SCORE_VS_PERC_LEADERS)) {
             saveChannelBalances()
         }

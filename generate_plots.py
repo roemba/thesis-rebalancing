@@ -8,6 +8,9 @@ trials = os.listdir(topDir)
 
 print(trials)
 
+def sort_on_first_row(data):
+    return data[:, data[0, :].argsort()]
+
 trial_data = {}
 for trial in trials:
     trial_data[trial] = {}
@@ -33,11 +36,11 @@ for trial in trials:
             lineParts = currentLine.strip().split(":")
             if lineParts[0] == "settings":
                 settingParts = lineParts[1].split("_")
-                if run == "hopCount.csv":
+                if trial == "PART_DISC" and "hopCount" in run:
                     trial_data[trial][run]["xRuns"].append(settingParts[0])
-                elif run == "maxNumberOfInvites.csv":
+                elif trial == "PART_DISC" and "maxNumberOfInvites" in run:
                     trial_data[trial][run]["xRuns"].append(settingParts[1])
-                elif run == "percentageLeaders.csv":
+                elif trial == "SCORE_VS_PERC_LEADERS" and "percentageLeaders" in run:
                     trial_data[trial][run]["xRuns"].append(settingParts[2])
                 elif trial == "STATIC_REBALANCING_COMPARISON":
                     trial_data[trial][run]["xRuns"].append(lineParts[1])
@@ -85,23 +88,31 @@ for trial in trials:
         fig = plt.figure()
         ax1 = fig.subplots(1)
 
-        x = np.array(trial_data[trial]["hopCount.csv"]["x"], dtype=np.double)
-        all_data = np.array([x, trial_data[trial]["hopCount.csv"]["y"]["nOfParticipants"], trial_data[trial]["hopCount.csv"]["yErr"]["nOfParticipants"]], dtype=np.double)
-        sorted_data = np.sort(all_data, axis=1)
+        x = np.array(trial_data[trial]["hopCount_5.csv"]["x"], dtype=np.double)
+        all_data = np.array([
+            x, 
+            trial_data[trial]["hopCount_5.csv"]["y"]["nOfParticipants"], 
+            trial_data[trial]["hopCount_5.csv"]["yErr"]["nOfParticipants"], 
+            trial_data[trial]["hopCount_7.csv"]["y"]["nOfParticipants"], 
+            trial_data[trial]["hopCount_7.csv"]["yErr"]["nOfParticipants"], 
+            trial_data[trial]["hopCount_9.csv"]["y"]["nOfParticipants"], 
+            trial_data[trial]["hopCount_9.csv"]["yErr"]["nOfParticipants"]
+        ], dtype=np.double)
+        sorted_data = sort_on_first_row(all_data)
 
-        ax1.plot(
-            sorted_data[0,:], 
-            sorted_data[1,:], 
-            marker='o',
-            label="Mean"
-        )
-        ax1.fill_between(
-            sorted_data[0,:],
-            sorted_data[1,:] - sorted_data[2,:],
-            sorted_data[1,:] + sorted_data[2,:],
-            alpha=0.5,
-            label="One standard deviation"
-        )
+        for i in range(1, 7, 2):
+            ax1.plot(
+                sorted_data[0,:], 
+                sorted_data[i,:], 
+                marker='o',
+                label=fr"$I_m = {i+4}$"
+            )
+            ax1.fill_between(
+                sorted_data[0,:],
+                sorted_data[i,:] - sorted_data[i+1,:],
+                sorted_data[i,:] + sorted_data[i+1,:],
+                alpha=0.5
+            )
         ax1.set_xlim(1)
         ax1.set_ylim(0)
         ax1.set_ylabel("Number of participants $|P|$")
@@ -116,23 +127,33 @@ for trial in trials:
         fig = plt.figure()
         ax1 = fig.subplots(1)
 
-        x = np.array(trial_data[trial]["maxNumberOfInvites.csv"]["x"], dtype=np.double)
-        all_data = np.array([x, trial_data[trial]["maxNumberOfInvites.csv"]["y"]["nOfParticipants"], trial_data[trial]["maxNumberOfInvites.csv"]["yErr"]["nOfParticipants"]], dtype=np.double)
-        sorted_data = np.sort(all_data, axis=1)
+        x = np.array(trial_data[trial]["maxNumberOfInvites_3.csv"]["x"], dtype=np.double)
+        all_data = np.array([x, 
+            trial_data[trial]["maxNumberOfInvites_3.csv"]["y"]["nOfParticipants"], 
+            trial_data[trial]["maxNumberOfInvites_3.csv"]["yErr"]["nOfParticipants"], 
+            trial_data[trial]["maxNumberOfInvites_4.csv"]["y"]["nOfParticipants"], 
+            trial_data[trial]["maxNumberOfInvites_4.csv"]["yErr"]["nOfParticipants"], 
+            trial_data[trial]["maxNumberOfInvites_5.csv"]["y"]["nOfParticipants"], 
+            trial_data[trial]["maxNumberOfInvites_5.csv"]["yErr"]["nOfParticipants"]
+        ], dtype=np.double)
+        sorted_data = sort_on_first_row(all_data)
         
-        ax1.plot(
-            sorted_data[0,:], 
-            sorted_data[1,:], 
-            marker='o',
-            label="Mean"
-        )
-        ax1.fill_between(
-            sorted_data[0,:],
-            sorted_data[1,:] - sorted_data[2,:],
-            sorted_data[1,:] + sorted_data[2,:],
-            alpha=0.5,
-            label="One standard deviation"
-        )
+        j = 0
+        for i in range(1, 7, 2):
+            ax1.plot(
+                sorted_data[0,:], 
+                sorted_data[i,:], 
+                marker='o',
+                label=fr"$h_c = {j + 3}$"
+            )
+            ax1.fill_between(
+                sorted_data[0,:],
+                sorted_data[i,:] - sorted_data[i+1,:],
+                sorted_data[i,:] + sorted_data[i+1,:],
+                alpha=0.5
+            )
+            j += 1
+
         ax1.set_xlim(1)
         ax1.set_ylim(0)
         ax1.set_ylabel("Number of participants $|P|$")
@@ -146,29 +167,37 @@ for trial in trials:
         fig = plt.figure()
         ax1 = fig.subplots(1)
         
-        x = np.array(trial_data[trial]["percentageLeaders.csv"]["x"], dtype=np.double) * 100.
+        x = np.array(trial_data[trial]["percentageLeaders_5.csv"]["x"], dtype=np.double) * 100.
         all_data = np.array([
             x, 
-            trial_data[trial]["percentageLeaders.csv"]["y"]["totalDemandsMet"], 
-            trial_data[trial]["percentageLeaders.csv"]["yErr"]["totalDemandsMet"], 
-            trial_data[trial]["percentageLeaders.csv"]["y"]["nOfRebalanceMes"], 
-            trial_data[trial]["percentageLeaders.csv"]["yErr"]["nOfRebalanceMes"]
+            trial_data[trial]["percentageLeaders_5.csv"]["y"]["totalDemandsMet"], 
+            trial_data[trial]["percentageLeaders_5.csv"]["yErr"]["totalDemandsMet"], 
+            trial_data[trial]["percentageLeaders_7.csv"]["y"]["totalDemandsMet"], 
+            trial_data[trial]["percentageLeaders_7.csv"]["yErr"]["totalDemandsMet"],
+            trial_data[trial]["percentageLeaders_9.csv"]["y"]["totalDemandsMet"], 
+            trial_data[trial]["percentageLeaders_9.csv"]["yErr"]["totalDemandsMet"],
+            trial_data[trial]["percentageLeaders_5.csv"]["y"]["nOfRebalanceMes"], 
+            trial_data[trial]["percentageLeaders_5.csv"]["yErr"]["nOfRebalanceMes"],
+            trial_data[trial]["percentageLeaders_7.csv"]["y"]["nOfRebalanceMes"], 
+            trial_data[trial]["percentageLeaders_7.csv"]["yErr"]["nOfRebalanceMes"],
+            trial_data[trial]["percentageLeaders_9.csv"]["y"]["nOfRebalanceMes"], 
+            trial_data[trial]["percentageLeaders_9.csv"]["yErr"]["nOfRebalanceMes"]
         ], dtype=np.double)
-        sorted_data = np.sort(all_data, axis=1)
+        sorted_data = sort_on_first_row(all_data)
 
-        ax1.plot(
-            sorted_data[0,:], 
-            sorted_data[1,:], 
-            marker='o',
-            label="Mean"
-        )
-        ax1.fill_between(
-            sorted_data[0,:],
-            sorted_data[1,:] - sorted_data[2,:],
-            sorted_data[1,:] + sorted_data[2,:],
-            alpha=0.5,
-            label="One standard deviation"
-        )
+        for i in range(1, 7, 2):
+            ax1.plot(
+                sorted_data[0,:], 
+                sorted_data[i,:], 
+                marker='o',
+                label=fr"$I_m = {i+4}$"
+            )
+            ax1.fill_between(
+                sorted_data[0,:],
+                sorted_data[i,:] - sorted_data[i+1,:],
+                sorted_data[i,:] + sorted_data[i+1,:],
+                alpha=0.5
+            )
 
         ax1.set_xlim(0, 100)
         ax1.set_ylim(0)
@@ -185,19 +214,19 @@ for trial in trials:
         fig = plt.figure()
         ax1 = fig.subplots(1)
         
-        ax1.plot(
-            sorted_data[0,:], 
-            sorted_data[3,:], 
-            marker='o',
-            label="Mean"
-        )
-        ax1.fill_between(
-            sorted_data[0,:],
-            sorted_data[3,:] - sorted_data[4,:],
-            sorted_data[3,:] + sorted_data[4,:],
-            alpha=0.5,
-            label="One standard deviation"
-        )
+        for i in range(7, 13, 2):
+            ax1.plot(
+                sorted_data[0,:], 
+                sorted_data[i,:], 
+                marker='o',
+                label=fr"$I_m = {i-6+4}$"
+            )
+            ax1.fill_between(
+                sorted_data[0,:],
+                sorted_data[i,:] - sorted_data[i+1,:],
+                sorted_data[i,:] + sorted_data[i+1,:],
+                alpha=0.5
+            )
 
         ax1.set_xlim(0, 100)
         ax1.set_ylim(0)

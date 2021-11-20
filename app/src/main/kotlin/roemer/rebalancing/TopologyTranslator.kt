@@ -79,6 +79,12 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String,
         println("Read ${jsonNodes.size} nodes of which $duplicateNodeId were duplicates")
         println("Read ${jsonChannels.size} channels of which $sourceDestNotFound could not be matched to a node src/dst")
         nodes = this.getLargestConnectedComponent(g)
+
+        // val nodeChannels: MutableSet<PaymentChannel> = HashSet() 
+        // for (node in nodes) {
+        //     nodeChannels.addAll(node.paymentChannels)
+        // }
+        // println("Final graph has ${nodes.size} nodes and ${nodeChannels.size} channels")
         return Pair(g, nodes)
     }
 

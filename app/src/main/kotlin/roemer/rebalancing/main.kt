@@ -45,17 +45,18 @@ fun main() {
 
     // statistics.printStatistics()
     
-    //val graph = GraphHolder("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.CoinWasher)
+    // // val graph = GraphHolder("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.CoinWasher)
 
     
-    //return
+    // return
 
     val trials = arrayOf(
         //Trials.NO_REBALANCING,
         //Trials.PART_DISC,
-        //Trials.SCORE_VS_PERC_LEADERS, 
-        Trials.STATIC_REBALANCING_COMPARISON
+        Trials.SCORE_VS_PERC_LEADERS, 
+        //Trials.STATIC_REBALANCING_COMPARISON
     )
+
     runBlocking(Dispatchers.Default) {
         for (trial in trials) {
             var runCounter = 0
@@ -70,44 +71,52 @@ fun main() {
 
                 when (trial) {
                     Trials.PART_DISC -> {
-                        val hopFileName = "$dirName/hopCount.csv"
-                        val hopMutex = Mutex()
-                        deleteFile(hopFileName)
+                        for (maxNumberOfInvites in listOf(5, 7, 9)) {
+                            val hopFileName = "$dirName/hopCount_${maxNumberOfInvites}.csv"
+                            val hopMutex = Mutex()
+                            deleteFile(hopFileName)
 
-                        for (hopCount in listOf(1, 5, 10, 15, 20, 25, 30)) {
-                            val algoSettings = AlgoSettings(hopCount, 5, 1F)
-                            launch { 
-                                val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.ParticipantDisc, SeededRandom(seed), Counter(), true)
-                                graph.start(algoSettings, false, trial, false, hopMutex, hopFileName)
-                                println("$seed - Finished $algoSettings")
+                            for (hopCount in listOf(1, 5, 10, 15, 20, 25, 30)) {
+                                val algoSettings = AlgoSettings(hopCount, maxNumberOfInvites, 1F)
+                                launch { 
+                                    val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.ParticipantDisc, SeededRandom(seed), Counter(), true)
+                                    graph.start(algoSettings, false, trial, false, hopMutex, hopFileName)
+                                    println("$seed - Finished $algoSettings")
+                                }
                             }
                         }
 
-                        val inviteFileName = "$dirName/maxNumberOfInvites.csv"
-                        val inviteMutex = Mutex()
-                        deleteFile(inviteFileName)
-                        for (maxNumberOfInvites in listOf(1, 5, 10, 15, 20, 25, 30)) {
-                            val algoSettings = AlgoSettings(3, maxNumberOfInvites, 1F)
-                            launch { 
-                                val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.ParticipantDisc, SeededRandom(seed), Counter(), true)
-                                graph.start(algoSettings, false, trial, false, inviteMutex, inviteFileName) 
-                                println("$seed - Finished $algoSettings")
+                        for (hopCount in listOf(3, 4, 5)) {
+                            val inviteFileName = "$dirName/maxNumberOfInvites_${hopCount}.csv"
+                            val inviteMutex = Mutex()
+                            deleteFile(inviteFileName)
+
+                            for (maxNumberOfInvites in listOf(1, 5, 10, 15, 20, 25, 30)) {
+                                val algoSettings = AlgoSettings(hopCount, maxNumberOfInvites, 1F)
+                                launch { 
+                                    val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.ParticipantDisc, SeededRandom(seed), Counter(), true)
+                                    graph.start(algoSettings, false, trial, false, inviteMutex, inviteFileName) 
+                                    println("$seed - Finished $algoSettings")
+                                }
                             }
                         }
                     }
                     Trials.SCORE_VS_PERC_LEADERS -> {
-                        val scoreFileName = "$dirName/percentageLeaders.csv"
-                        val scoreMutex = Mutex()
-                        deleteFile(scoreFileName)
+                        for (maxNumberOfInvites in listOf(5, 7, 9)) {
+                            val scoreFileName = "$dirName/percentageLeaders_${maxNumberOfInvites}.csv"
+                            val scoreMutex = Mutex()
+                            deleteFile(scoreFileName)
 
-                        for (percentageLeader in listOf(0.01F, 0.05F, 0.1F, 0.15F,0.2F, 0.4F, 0.6F, 0.8F, 1.0F)) {
-                            val algoSettings = AlgoSettings(3, 5, percentageLeader)
-                            launch { 
-                                val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.CoinWasher, SeededRandom(seed), Counter(), false)
-                                graph.start(algoSettings, false, trial, false, scoreMutex, scoreFileName)
-                                println("$seed - Finished $algoSettings")
+                            for (percentageLeader in listOf(0.01F, 0.05F, 0.1F, 0.15F,0.2F, 0.4F, 0.6F, 0.8F, 1.0F)) {
+                                val algoSettings = AlgoSettings(3, maxNumberOfInvites, percentageLeader)
+                                launch { 
+                                    val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.CoinWasher, SeededRandom(seed), Counter(), false)
+                                    graph.start(algoSettings, false, trial, false, scoreMutex, scoreFileName)
+                                    println("$seed - Finished $algoSettings")
+                                }
                             }
                         }
+
                     }
                     Trials.STATIC_REBALANCING_COMPARISON -> {
                         val algoSettings = AlgoSettings(3, 10, 0.5F)
@@ -146,6 +155,12 @@ fun main() {
     // LpSolveDemo().demo()
 }
 
+val alreadyTriedDeleting: MutableSet<String> = HashSet()
+
 fun deleteFile(path: String) {
-    Files.deleteIfExists(File(path).toPath())
+    if (path !in alreadyTriedDeleting) {
+        Files.deleteIfExists(File(path).toPath())
+        alreadyTriedDeleting.add(path)
+    }
+    
 }
