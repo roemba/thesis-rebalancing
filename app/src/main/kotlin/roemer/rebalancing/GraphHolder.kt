@@ -23,7 +23,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 enum class NodeTypes {
-    ParticipantDisc, CoinWasher, Revive
+    ParticipantDisc, CoinWasher, Revive, Normal
 }
 
 enum class Steps {
@@ -64,6 +64,7 @@ class GraphHolder (
                     NodeTypes.CoinWasher -> CoinWasherNode(i, g, counter, random, logger)
                     NodeTypes.Revive -> ReviveNode(i, g, counter, random, logger)
                     NodeTypes.ParticipantDisc -> ParticipantNodeAlt(i, g, counter, random, logger)
+                    NodeTypes.Normal -> Node(i, g, counter, random, logger)
                 }
 
                 g.graph.addVertex(n)
@@ -138,6 +139,8 @@ class GraphHolder (
         if (!dynamicRun && (trial == Trials.STATIC_REBALANCING_COMPARISON || trial == Trials.SCORE_VS_PERC_LEADERS)) {
             saveChannelBalances()
         }
+        var sampledAt = -1L
+
         //printChannelBalances()
         val samplingInterval = 1000L // In ms
         val sampleTimeList: MutableList<Long> = ArrayList()
@@ -151,10 +154,11 @@ class GraphHolder (
         val latestArrivalTimePerNodeChannelID: MutableMap<String, Long> = HashMap()
         val txGen = TransactionGenerator(nodes, 1, this.maxTransactions, this.logger)
 
-        val startNodeIndex = if (randomStartNode) this.random.random.nextInt(nodes.size) else min(10, nodes.size - 1)
+        var startNodeIndex: Int? = null 
         if (dynamicRun) {
             eventQueue.add(txGen.generateTransactions(now))
         } else {
+            startNodeIndex = if (randomStartNode) this.random.random.nextInt(nodes.size) else min(10, nodes.size - 1)
             eventQueue.add(StartEvent(0, this.random, StartDescription(Steps.Discover, nodes[startNodeIndex])))
         }
 
@@ -167,7 +171,7 @@ class GraphHolder (
             if (event is MessageEvent) {
                 simulInputs.add(event.message.recipient.receiveMessage(event.message))
             } else if (event is StartEvent) {
-                if (trial != Trials.NO_REBALANCING) {
+                if (nodeType != NodeTypes.Normal) {
                     val simulInput = when (event.desc.step) {
                         Steps.Discover -> when (this.nodeType) {
                             NodeTypes.ParticipantDisc -> (event.desc.recipient as ParticipantNodeAlt).findParticipants(algoSettings)
@@ -219,7 +223,7 @@ class GraphHolder (
                 }
             }
 
-            if (trial == Trials.DYNAMIC_REBALANCING_COMPARISON && now % samplingInterval == 0L) {
+            if (trial == Trials.DYNAMIC_REBALANCING_COMPARISON && now % samplingInterval == 0L && now != sampledAt) {
                 // Collect all statistical data here
                 sampleTimeList.add(now)
 
@@ -239,6 +243,7 @@ class GraphHolder (
                 // Transaction Success Ratio
                 val ratio = nOfSuccessfullTransactions.toFloat() / totalNumberOfTransactions
                 successRatio.add(if (ratio.isNaN()) 1.0f else ratio)
+                sampledAt = now
             }
         }
 
@@ -249,7 +254,7 @@ class GraphHolder (
                 calculateScore()
             }
 
-            val nOfParticipants = (nodes[startNodeIndex] as ParticipantNodeAlt).result?.finalParticipants?.size
+            val nOfParticipants = (nodes[startNodeIndex!!] as ParticipantNodeAlt).result?.finalParticipants?.size
             println()
             println("Number of participants: $nOfParticipants/${nodes.size}")
             println()
@@ -307,9 +312,9 @@ class GraphHolder (
         }
 
         if (dynamicRun && trial == Trials.DYNAMIC_REBALANCING_COMPARISON) {
-            saveData(algoSettings.toFileName(), writeMutex, fileName, mapOf("time" to sampleTimeList, "successRatio" to successRatio, "networkImbalance" to networkImbalance))
+            saveData(sampleTimeList.joinToString(","), writeMutex, fileName, mapOf("successRatio" to successRatio, "networkImbalance" to networkImbalance))
         } else if (trial == Trials.PART_DISC) {
-            val nOfParticipants = (nodes[startNodeIndex] as ParticipantNodeAlt).result!!.finalParticipants.size
+            val nOfParticipants = (nodes[startNodeIndex!!] as ParticipantNodeAlt).result!!.finalParticipants.size
             saveData(algoSettings.toFileName(), writeMutex, fileName, mapOf("nOfParticipants" to listOf(nOfParticipants)))
         } else if (trial == Trials.SCORE_VS_PERC_LEADERS) {
             val rebalancingScore = calculateScore()

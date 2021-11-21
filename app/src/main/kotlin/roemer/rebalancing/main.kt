@@ -53,14 +53,15 @@ fun main() {
     val trials = arrayOf(
         //Trials.NO_REBALANCING,
         //Trials.PART_DISC,
-        Trials.SCORE_VS_PERC_LEADERS, 
-        //Trials.STATIC_REBALANCING_COMPARISON
+        //Trials.SCORE_VS_PERC_LEADERS, 
+        //Trials.STATIC_REBALANCING_COMPARISON,
+        Trials.DYNAMIC_REBALANCING_COMPARISON
     )
 
     runBlocking(Dispatchers.Default) {
         for (trial in trials) {
             var runCounter = 0
-            for (seed in 0 until 10) {
+            for (seed in 0 until 2) {
                 val seedMutex = Mutex()
                 val dirName = "output_files/${trial}"
                 val dir = File(dirName)
@@ -119,7 +120,7 @@ fun main() {
 
                     }
                     Trials.STATIC_REBALANCING_COMPARISON -> {
-                        val algoSettings = AlgoSettings(3, 10, 0.5F)
+                        val algoSettings = AlgoSettings(3, 10, 0.2F)
                         for (graphName in listOf("difficult_graph.txt", "complete_graph.txt", "lightning")) {
                             val scoreFileName = "$dirName/score_$graphName.csv"
                             val scoreMutex = Mutex()
@@ -136,6 +137,21 @@ fun main() {
                                     
                                     graph.start(algoSettings, false, trial, false, scoreMutex, scoreFileName)
                                 }
+                            }
+                        }
+                    } 
+                    Trials.DYNAMIC_REBALANCING_COMPARISON -> {
+                        val algoSettings = AlgoSettings(3, 5, 0.2F)
+
+                        for (nodeType in listOf(NodeTypes.CoinWasher, NodeTypes.Revive, NodeTypes.Normal)) {
+                            val scoreFileName = "$dirName/data_${nodeType}.csv"
+                            val scoreMutex = Mutex()
+                            deleteFile(scoreFileName)
+
+                            launch {
+                                val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", nodeType, SeededRandom(seed), Counter(), true)
+                                
+                                graph.start(algoSettings, true, trial, false, scoreMutex, scoreFileName)
                             }
                         }
                     } 

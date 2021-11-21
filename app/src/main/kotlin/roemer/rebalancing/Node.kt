@@ -284,7 +284,8 @@ open class Node(val id: Int, val g: ChannelNetwork, val counter: Counter,  val r
             }
         }
 
-        return nom / (2.0 * denom)
+        val result = nom / (2.0 * denom)
+        return if (result.isNaN()) 1.0 else result
     }
 
     fun checkIfRebalancingRequired() {

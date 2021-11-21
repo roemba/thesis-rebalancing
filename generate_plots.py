@@ -13,6 +13,9 @@ def sort_on_first_row(data):
 
 trial_data = {}
 for trial in trials:
+    # if (trial != "DYNAMIC_REBALANCING_COMPARISON"):
+    #     continue
+
     trial_data[trial] = {}
     runFiles = os.listdir(f"{topDir}/{trial}")
     print(len(runFiles))
@@ -44,25 +47,53 @@ for trial in trials:
                     trial_data[trial][run]["xRuns"].append(settingParts[2])
                 elif trial == "STATIC_REBALANCING_COMPARISON":
                     trial_data[trial][run]["xRuns"].append(lineParts[1])
+                elif trial == "DYNAMIC_REBALANCING_COMPARISON":
+                    trial_data[trial][run]["xRuns"].append(np.fromstring(lineParts[1], sep=","))
 
 
                 j = i + 1
                 while j < len(lines) and lines[j].strip().split(":")[0] != "settings":
                     lineParts = lines[j].strip().split(":")
                     if not (lineParts[0] in trial_data[trial][run]["yRuns"]):
-                        trial_data[trial][run]["yRuns"][lineParts[0]] = np.fromstring(lineParts[1], sep=",")
+                        trial_data[trial][run]["yRuns"][lineParts[0]] = [np.fromstring(lineParts[1], sep=",")]
                     else:
-                        trial_data[trial][run]["yRuns"][lineParts[0]] = np.concatenate((trial_data[trial][run]["yRuns"][lineParts[0]], np.fromstring(lineParts[1], sep=",")), axis=0)
+                        trial_data[trial][run]["yRuns"][lineParts[0]].append(np.fromstring(lineParts[1], sep=",")) #np.vstack((trial_data[trial][run]["yRuns"][lineParts[0]], np.fromstring(lineParts[1], sep=",")))
                     
                     j += 1
 
                 i = j
+
+        minItems = 100000000
+        minArr = None
+        if trial == "DYNAMIC_REBALANCING_COMPARISON":
+            for arr in trial_data[trial][run]["xRuns"]:
+                if arr.shape[0] < minItems:
+                    minItems = arr.shape[0]
+                    minArr = arr
+
+            for i in range(len(trial_data[trial][run]["xRuns"])):
+                trial_data[trial][run]["xRuns"][i] = trial_data[trial][run]["xRuns"][i][:minItems]
+
+                for yDatName in trial_data[trial][run]["yRuns"]:
+                    trial_data[trial][run]["yRuns"][yDatName][i] = trial_data[trial][run]["yRuns"][yDatName][i][:minItems]
+                
                 
 
-        trial_data[trial][run]["xRuns"] = np.array(trial_data[trial][run]["xRuns"], dtype=str)
+            for yDatName in trial_data[trial][run]["yRuns"]:
+                    trial_data[trial][run]["yRuns"][yDatName] = np.array(trial_data[trial][run]["yRuns"][yDatName])
+                    #print("yshape", trial_data[trial][run]["yRuns"][yDatName].shape)
 
-        unique_x = np.unique(trial_data[trial][run]["xRuns"], axis=0)
-        print(unique_x)
+            trial_data[trial][run]["xRuns"] = np.array(trial_data[trial][run]["xRuns"]).flatten()
+            #print("xshape", trial_data[trial][run]["xRuns"].shape)
+
+        else:
+            trial_data[trial][run]["xRuns"] = np.array(trial_data[trial][run]["xRuns"], dtype=object)
+
+        for yDatName in trial_data[trial][run]["yRuns"]:
+            trial_data[trial][run]["yRuns"][yDatName] = np.array(trial_data[trial][run]["yRuns"][yDatName]).flatten()
+
+        unique_x = np.unique(trial_data[trial][run]["xRuns"])
+        print("unique", unique_x, unique_x.shape)
         trial_data[trial][run]["x"] = unique_x
 
         for xU in unique_x:
@@ -80,9 +111,7 @@ for trial in trials:
         for yDatName in trial_data[trial][run]["y"]:
             trial_data[trial][run]["y"][yDatName] = np.array(trial_data[trial][run]["y"][yDatName])
 
-        #print(trial_data[trial][run])
-
-
+        #print("final_processing", trial_data[trial][run])
 
     if trial == "PART_DISC":
         fig = plt.figure()
@@ -246,6 +275,8 @@ for trial in trials:
         ax1 = fig.subplots(1)
         
         proto_types = trial_data[trial]["score_complete_graph.txt.csv"]["x"]
+        proto_types[np.where(proto_types == "CoinWasher")] = "Our protocol"
+
         y_all = np.array([
             trial_data[trial]["score_complete_graph.txt.csv"]["y"]["totalDemandsMet"],  
             trial_data[trial]["score_difficult_graph.txt.csv"]["y"]["totalDemandsMet"], 
@@ -269,9 +300,9 @@ for trial in trials:
             trial_data[trial]["score_lightning.csv"]["yErr"]["time"], 
         ], dtype=np.double)
         
-        labels_score = ["Complete", "Design Example", "Lightning (div. $10^4$)"]
-        labels_mes = ["Complete", "Design Example", "Lightning (div. $10^3$)"]
-        labels_time = ["Complete", "Design Example", "Lightning (div. $10^2$)"]
+        labels_score = [r"$G_{\mathrm{Complete}}$", r"$G_{\mathrm{Design}}$", r"$G_{\mathrm{Lightning}}$ / $10^4$"]
+        labels_mes = [r"$G_{\mathrm{Complete}}$", r"$G_{\mathrm{Design}}$", r"$G_{\mathrm{Lightning}}$ / $10^3$"]
+        labels_time = [r"$G_{\mathrm{Complete}}$", r"$G_{\mathrm{Design}}$", r"$G_{\mathrm{Lightning}}$ / $10^2$"]
         x = np.arange(len(labels_score))
         print(y_all)
 
@@ -332,6 +363,82 @@ for trial in trials:
         
         ax1.legend()
         fig.savefig(f"{trial}_static_comp_time.pdf")
+    elif trial == "DYNAMIC_REBALANCING_COMPARISON":
+        print(trial_data[trial]["data_CoinWasher.csv"]["x"])
+
+        fig = plt.figure()
+        ax1, ax2 = fig.subplots(2, sharex=True)
+
+        all_coinwasher_data = np.array([
+            trial_data[trial]["data_CoinWasher.csv"]["x"] / 1000, 
+            trial_data[trial]["data_CoinWasher.csv"]["y"]["successRatio"], 
+            trial_data[trial]["data_CoinWasher.csv"]["yErr"]["successRatio"], 
+            trial_data[trial]["data_CoinWasher.csv"]["y"]["networkImbalance"], 
+            trial_data[trial]["data_CoinWasher.csv"]["yErr"]["networkImbalance"]
+        ], dtype=np.double)
+        sorted_data = sort_on_first_row(all_coinwasher_data)
+
+        all_revive_data = np.array([
+            trial_data[trial]["data_Revive.csv"]["x"] / 1000, 
+            trial_data[trial]["data_Revive.csv"]["y"]["successRatio"], 
+            trial_data[trial]["data_Revive.csv"]["yErr"]["successRatio"], 
+            trial_data[trial]["data_Revive.csv"]["y"]["networkImbalance"], 
+            trial_data[trial]["data_Revive.csv"]["yErr"]["networkImbalance"]
+        ], dtype=np.double)
+        sorted_data = sort_on_first_row(all_revive_data)
+
+        all_no_rebalancing_data = np.array([
+            trial_data[trial]["data_Normal.csv"]["x"] / 1000, 
+            trial_data[trial]["data_Normal.csv"]["y"]["successRatio"], 
+            trial_data[trial]["data_Normal.csv"]["yErr"]["successRatio"], 
+            trial_data[trial]["data_Normal.csv"]["y"]["networkImbalance"], 
+            trial_data[trial]["data_Normal.csv"]["yErr"]["networkImbalance"]
+        ], dtype=np.double)
+        sorted_data = sort_on_first_row(all_no_rebalancing_data)
+        
+        dt = [all_coinwasher_data, all_revive_data, all_no_rebalancing_data]
+        labels = ["Our protocol", "Revive", "No rebalancing"]
+
+        for i in range(len(dt)):
+            ax1.plot(
+                dt[i][0, :], 
+                dt[i][1, :], 
+                label=labels[i]
+            )
+
+            ax1.fill_between(
+                dt[i][0,:],
+                dt[i][1,:] - dt[i][2,:],
+                dt[i][1,:] + dt[i][2,:],
+                alpha=0.5
+            )
+
+        ax1.set_xlim(0)
+        ax1.set_ylim(0, 1)
+        ax1.set_ylabel("Success ratio")
+        ax1.grid()
+
+        for i in range(len(dt)):
+            ax2.plot(
+                dt[i][0, :], 
+                dt[i][3, :]
+            )
+
+            ax2.fill_between(
+                dt[i][0,:],
+                dt[i][3,:] - dt[i][4,:],
+                dt[i][3,:] + dt[i][4,:],
+                alpha=0.5
+            )
+
+        ax2.set_xlabel("Time (s)")
+        ax2.set_ylabel("Average network imbalance")
+        ax2.grid()
+
+        fig.legend()
+
+        fig.savefig(f"{trial}_success_ratio.pdf")
+
 
 # trial_names = ["no_rebalancing", "coinwasher", "revive"]
 # arr_per_trial = {}

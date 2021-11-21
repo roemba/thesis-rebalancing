@@ -50,6 +50,7 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String,
                 NodeTypes.CoinWasher -> CoinWasherNode(i, g, counter, this.random, this.logger)
                 NodeTypes.Revive -> ReviveNode(i, g, counter, this.random, this.logger)
                 NodeTypes.ParticipantDisc -> ParticipantNodeAlt(i, g, counter, this.random, this.logger)
+                NodeTypes.Normal -> Node(i, g, counter, this.random, this.logger)
             }
             g.graph.addVertex(n)
             nodes.add(n)
