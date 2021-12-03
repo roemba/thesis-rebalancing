@@ -15,10 +15,14 @@ open class Node(val id: Int, val g: ChannelNetwork, val counter: Counter,  val r
     val ongoingPayments: MutableMap<Payment, LocalPayment> = HashMap()
     val logger = this.globalLogger.getNodeLogger(this)
 
+    // Start statistics
     var specialCounter = 0
     var transactionsCompleted = 0
     var transactionsRetried = 0
-    var transactionsFailed = 0
+    var transactionsFailedBecauseOfLackOfFunds = 0
+    var transactionsFailedBecauseChannelLocked = 0
+    var transactionsFailedBecauseOther = 0
+    // End statistics
 
     var sendingList: MutableList<Message> = ArrayList()
     var startStopDesc: StartDescription? = null
@@ -29,7 +33,7 @@ open class Node(val id: Int, val g: ChannelNetwork, val counter: Counter,  val r
     var rebalancingAwake = false
     var discoverAwake = false
 
-    val REBALANCING_TRIGGER_POINT = 0.1
+    val REBALANCING_TRIGGER_POINT = 0.2
 
     fun startPayment(payment: Payment): SimulationInput {
         if (payment.from != this) {
@@ -55,14 +59,24 @@ open class Node(val id: Int, val g: ChannelNetwork, val counter: Counter,  val r
             sendMessage(
                 RequestPaymentMessage(MessageTypes.REQ_TX, this, nextNode, toChannel, payment, path)
             )
-        } catch (e: IllegalStateException) {
-            this.transactionsFailed++
-            //TransactionStatusCounter.updateStatus(payment, TransactionStatus.FAILED)
-            logger.warn("Could not start transaction because $toChannel has insufficient balance for amount ${tx.amount}")
+        } catch (e: ChannelException) {
+            if (e is InsufficientFundsException) {
+                logger.debug("Could not start transaction because $toChannel has insufficient balance for amount ${tx.amount}")
+            }
+            
+            this.logFailedTransaction(e)
         }
 
         this.stopMessageSending()
         return SimulationInput(this, sendingList, null)
+    }
+
+    private fun logFailedTransaction (e: ChannelException) {
+        when (e) {
+            is InsufficientFundsException -> this.transactionsFailedBecauseOfLackOfFunds++
+            is ChannelLockedException -> this.transactionsFailedBecauseChannelLocked++
+            else -> this.transactionsFailedBecauseOther++
+        }
     }
 
     private fun canLogMessage(message: Message): Boolean {
@@ -177,7 +191,7 @@ open class Node(val id: Int, val g: ChannelNetwork, val counter: Counter,  val r
         when (message.type) {
             MessageTypes.REQ_TX -> handleRequestTxMessage(message as RequestPaymentMessage)
             MessageTypes.EXEC_TX -> handleExecTxMessage(message as PaymentMessage)
-            MessageTypes.ABORT_TX ->  handleAbortTxMessage(message as PaymentMessage)
+            MessageTypes.ABORT_TX ->  handleAbortTxMessage(message as AbortPaymentMessage)
             else -> {
                 throw IllegalArgumentException("Cannot process ${message.type}")
             }
@@ -208,9 +222,10 @@ open class Node(val id: Int, val g: ChannelNetwork, val counter: Counter,  val r
         // If commit fails, send ABORT to sender of the message
         try {
             toChannel.requestTx(tx)
-        } catch (e: IllegalStateException) {
+        } catch (e: ChannelException) {
+
             sendMessage(
-                PaymentMessage(MessageTypes.ABORT_TX, this, previousNode, fromChannel, mes.payment)
+                AbortPaymentMessage(MessageTypes.ABORT_TX, this, previousNode, fromChannel, mes.payment, e)
             )
             return
         }
@@ -248,7 +263,7 @@ open class Node(val id: Int, val g: ChannelNetwork, val counter: Counter,  val r
         this.checkIfRebalancingRequired()
     }
 
-    private fun handleAbortTxMessage(mes: PaymentMessage) {
+    private fun handleAbortTxMessage(mes: AbortPaymentMessage) {
         if (mes.payment !in ongoingPayments) {
             throw IllegalArgumentException("Payment ${mes.payment} never requested from $this")
         }
@@ -263,10 +278,10 @@ open class Node(val id: Int, val g: ChannelNetwork, val counter: Counter,  val r
         // If it was not I who started the tx, propagate Abort
         if (localPayment.fromPaymentChannel !== null) {
             sendMessage(
-                PaymentMessage(MessageTypes.ABORT_TX, this, localPayment.fromPaymentChannel.getOppositeNode(this), localPayment.fromPaymentChannel, mes.payment)
+                AbortPaymentMessage(MessageTypes.ABORT_TX, this, localPayment.fromPaymentChannel.getOppositeNode(this), localPayment.fromPaymentChannel, mes.payment, mes.e)
             )
         } else {
-            this.transactionsFailed++
+            this.logFailedTransaction(mes.e)
         }
 
         ongoingPayments.remove(mes.payment)

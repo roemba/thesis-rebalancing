@@ -130,23 +130,19 @@ class GraphHolder (
 
     suspend fun start (algoSettings: AlgoSettings, dynamicRun: Boolean, trial: Trials, randomStartNode: Boolean, writeMutex: Mutex, fileName: String, debug: Boolean = false) {
         // Statistics and logging
-        if (trial == Trials.PART_DISC || trial == Trials.DYNAMIC_REBALANCING_COMPARISON) {
-            for (node in nodes) {
-                node.paymentChannels.shuffle(this.random.random)
-            }
-        }
-
         if (!dynamicRun && (trial == Trials.STATIC_REBALANCING_COMPARISON || trial == Trials.SCORE_VS_PERC_LEADERS)) {
             saveChannelBalances()
         }
         var sampledAt = -1L
 
         //printChannelBalances()
-        val samplingInterval = 1000L // In ms
+        val samplingInterval = 10000L // In ms
         val sampleTimeList: MutableList<Long> = ArrayList()
         
         val networkImbalance: MutableList<Float> = ArrayList()
         val successRatio: MutableList<Float> = ArrayList()
+        val nsOfTxAbortBecauseLocked: MutableList<Int> = ArrayList()
+        val nsOfTxAbortBecauseNoFunds: MutableList<Int> = ArrayList()
 
         // Discrete event simulation
         var now = 0L
@@ -230,10 +226,15 @@ class GraphHolder (
                 var totalImbalance = 0.0
                 var nOfSuccessfullTransactions = 0
                 var totalNumberOfTransactions = 0
+                var nOfTxAbortBecauseLocked = 0
+                var nOfTxAbortBecauseNoFunds = 0
                 for (node in nodes) {
                     totalImbalance += node.getGiniCoefficient()
                     nOfSuccessfullTransactions += node.transactionsCompleted
-                    totalNumberOfTransactions += node.transactionsCompleted + node.transactionsRetried + node.transactionsFailed
+                    totalNumberOfTransactions += node.transactionsCompleted + node.transactionsRetried + node.transactionsFailedBecauseOfLackOfFunds + node.transactionsFailedBecauseChannelLocked + node.transactionsFailedBecauseOther
+
+                    nOfTxAbortBecauseLocked += node.transactionsFailedBecauseChannelLocked
+                    nOfTxAbortBecauseNoFunds += node.transactionsFailedBecauseOfLackOfFunds
                 }
 
                 // Network Imbalance
@@ -244,6 +245,10 @@ class GraphHolder (
                 val ratio = nOfSuccessfullTransactions.toFloat() / totalNumberOfTransactions
                 successRatio.add(if (ratio.isNaN()) 1.0f else ratio)
                 sampledAt = now
+
+                // Other tx statistics
+                nsOfTxAbortBecauseLocked += nOfTxAbortBecauseLocked
+                nsOfTxAbortBecauseNoFunds += nOfTxAbortBecauseNoFunds
             }
         }
 
@@ -265,13 +270,13 @@ class GraphHolder (
             var nOfRebalancingAwake = 0
             var nOfNodesWithOngoingTransactions = 0
             var nOfTransactionsComplete = 0
-            var nOfTransactionsFailed = 0
+            //var nOfTransactionsFailed = 0
             var totalSpecialCounter = 0
             for (i in 0 until nodes.size) {
                 val node = nodes[i] as ParticipantNodeAlt
                 totalSpecialCounter += node.specialCounter
                 nOfTransactionsComplete += node.transactionsCompleted
-                nOfTransactionsFailed += node.transactionsFailed
+                //nOfTransactionsFailed += node.transactionsFailed
                 val giniCoefficient = node.getGiniCoefficient()
 
                 // if (giniCoefficient > 0.0001) {
@@ -302,7 +307,7 @@ class GraphHolder (
             println("Special counter: ${totalSpecialCounter}")
             println()
             println("${nOfTransactionsComplete}/${this.maxTransactions} transactions completed")
-            println("${nOfTransactionsFailed}/${this.maxTransactions} transactions failed")
+            //println("${nOfTransactionsFailed}/${this.maxTransactions} transactions failed")
             println()
             println("Total time: ${now / 1000L / 60L / 60L} hours or ${now / 1000L / 60L} minutes or ${now / 1000L} seconds")
             println()
@@ -312,7 +317,7 @@ class GraphHolder (
         }
 
         if (dynamicRun && trial == Trials.DYNAMIC_REBALANCING_COMPARISON) {
-            saveData(sampleTimeList.joinToString(","), writeMutex, fileName, mapOf("successRatio" to successRatio, "networkImbalance" to networkImbalance))
+            saveData(sampleTimeList.joinToString(","), writeMutex, fileName, mapOf("successRatio" to successRatio, "networkImbalance" to networkImbalance, "nsOfTxAbortBecauseLocked" to nsOfTxAbortBecauseLocked, "nsOfTxAbortBecauseNoFunds" to nsOfTxAbortBecauseNoFunds))
         } else if (trial == Trials.PART_DISC) {
             val nOfParticipants = (nodes[startNodeIndex!!] as ParticipantNodeAlt).result!!.finalParticipants.size
             saveData(algoSettings.toFileName(), writeMutex, fileName, mapOf("nOfParticipants" to listOf(nOfParticipants)))

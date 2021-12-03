@@ -62,6 +62,19 @@ class RequestPaymentMessage(
     }
 }
 
+class AbortPaymentMessage(
+    type: MessageTypes,
+    sender: Node,
+    recipient: Node,
+    channel: PaymentChannel,
+    payment: Payment,
+    val e: ChannelException
+): PaymentMessage(type, sender, recipient, channel, payment) {
+    override fun toString(): String {
+        return "AbortPaymentMessage(type=$type, payment=$payment, sender=$sender, recipient=$recipient, e=$e)"
+    }
+}
+
 open class ParticipantMessage(
     type: MessageTypes,
     sender: Node,

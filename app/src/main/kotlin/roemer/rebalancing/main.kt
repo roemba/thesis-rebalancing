@@ -78,7 +78,7 @@ fun main() {
                             deleteFile(hopFileName)
 
                             for (hopCount in listOf(1, 5, 10, 15, 20, 25, 30)) {
-                                val algoSettings = AlgoSettings(hopCount, maxNumberOfInvites, 1F)
+                                val algoSettings = AlgoSettings(hopCount, maxNumberOfInvites, 1F, true)
                                 launch { 
                                     val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.ParticipantDisc, SeededRandom(seed), Counter(), true)
                                     graph.start(algoSettings, false, trial, false, hopMutex, hopFileName)
@@ -93,7 +93,7 @@ fun main() {
                             deleteFile(inviteFileName)
 
                             for (maxNumberOfInvites in listOf(1, 5, 10, 15, 20, 25, 30)) {
-                                val algoSettings = AlgoSettings(hopCount, maxNumberOfInvites, 1F)
+                                val algoSettings = AlgoSettings(hopCount, maxNumberOfInvites, 1F, true)
                                 launch { 
                                     val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.ParticipantDisc, SeededRandom(seed), Counter(), true)
                                     graph.start(algoSettings, false, trial, false, inviteMutex, inviteFileName) 
@@ -109,7 +109,7 @@ fun main() {
                             deleteFile(scoreFileName)
 
                             for (percentageLeader in listOf(0.01F, 0.05F, 0.1F, 0.15F,0.2F, 0.4F, 0.6F, 0.8F, 1.0F)) {
-                                val algoSettings = AlgoSettings(3, maxNumberOfInvites, percentageLeader)
+                                val algoSettings = AlgoSettings(3, maxNumberOfInvites, percentageLeader, false)
                                 launch { 
                                     val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.CoinWasher, SeededRandom(seed), Counter(), false)
                                     graph.start(algoSettings, false, trial, false, scoreMutex, scoreFileName)
@@ -120,7 +120,7 @@ fun main() {
 
                     }
                     Trials.STATIC_REBALANCING_COMPARISON -> {
-                        val algoSettings = AlgoSettings(3, 10, 0.2F)
+                        val algoSettings = AlgoSettings(3, 10, 0.2F, false)
                         for (graphName in listOf("difficult_graph.txt", "complete_graph.txt", "lightning")) {
                             val scoreFileName = "$dirName/score_$graphName.csv"
                             val scoreMutex = Mutex()
@@ -141,7 +141,7 @@ fun main() {
                         }
                     } 
                     Trials.DYNAMIC_REBALANCING_COMPARISON -> {
-                        val algoSettings = AlgoSettings(3, 5, 0.2F)
+                        val algoSettings = AlgoSettings(3, 3, 0.2F, true)
 
                         for (nodeType in listOf(NodeTypes.CoinWasher, NodeTypes.Revive, NodeTypes.Normal)) {
                             val scoreFileName = "$dirName/data_${nodeType}.csv"
@@ -149,14 +149,14 @@ fun main() {
                             deleteFile(scoreFileName)
 
                             launch {
-                                val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", nodeType, SeededRandom(seed), Counter(), true)
+                                val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", nodeType, SeededRandom(seed), Counter(), false)
                                 
                                 graph.start(algoSettings, true, trial, false, scoreMutex, scoreFileName)
                             }
                         }
                     } 
                     else -> {
-                        val algoSettings = AlgoSettings(3, 5, 1F)
+                        val algoSettings = AlgoSettings(3, 5, 1F, true)
                         launch { 
                             val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.CoinWasher, SeededRandom(seed), Counter(), true)
                             graph.start(algoSettings, true, trial, true, seedMutex, "output_files/lalala.csv") 

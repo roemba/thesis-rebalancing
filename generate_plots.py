@@ -366,15 +366,19 @@ for trial in trials:
     elif trial == "DYNAMIC_REBALANCING_COMPARISON":
         print(trial_data[trial]["data_CoinWasher.csv"]["x"])
 
-        fig = plt.figure()
-        ax1, ax2 = fig.subplots(2, sharex=True)
+        fig = plt.figure(figsize=(6, 8))
+        ax1, ax2, ax3 = fig.subplots(3, sharex=True)
 
         all_coinwasher_data = np.array([
             trial_data[trial]["data_CoinWasher.csv"]["x"] / 1000, 
             trial_data[trial]["data_CoinWasher.csv"]["y"]["successRatio"], 
             trial_data[trial]["data_CoinWasher.csv"]["yErr"]["successRatio"], 
             trial_data[trial]["data_CoinWasher.csv"]["y"]["networkImbalance"], 
-            trial_data[trial]["data_CoinWasher.csv"]["yErr"]["networkImbalance"]
+            trial_data[trial]["data_CoinWasher.csv"]["yErr"]["networkImbalance"], 
+            trial_data[trial]["data_CoinWasher.csv"]["y"]["nsOfTxAbortBecauseLocked"], 
+            trial_data[trial]["data_CoinWasher.csv"]["yErr"]["nsOfTxAbortBecauseLocked"], 
+            trial_data[trial]["data_CoinWasher.csv"]["y"]["nsOfTxAbortBecauseNoFunds"], 
+            trial_data[trial]["data_CoinWasher.csv"]["yErr"]["nsOfTxAbortBecauseNoFunds"]
         ], dtype=np.double)
         sorted_data = sort_on_first_row(all_coinwasher_data)
 
@@ -383,7 +387,11 @@ for trial in trials:
             trial_data[trial]["data_Revive.csv"]["y"]["successRatio"], 
             trial_data[trial]["data_Revive.csv"]["yErr"]["successRatio"], 
             trial_data[trial]["data_Revive.csv"]["y"]["networkImbalance"], 
-            trial_data[trial]["data_Revive.csv"]["yErr"]["networkImbalance"]
+            trial_data[trial]["data_Revive.csv"]["yErr"]["networkImbalance"], 
+            trial_data[trial]["data_Revive.csv"]["y"]["nsOfTxAbortBecauseLocked"], 
+            trial_data[trial]["data_Revive.csv"]["yErr"]["nsOfTxAbortBecauseLocked"], 
+            trial_data[trial]["data_Revive.csv"]["y"]["nsOfTxAbortBecauseNoFunds"], 
+            trial_data[trial]["data_Revive.csv"]["yErr"]["nsOfTxAbortBecauseNoFunds"]
         ], dtype=np.double)
         sorted_data = sort_on_first_row(all_revive_data)
 
@@ -392,7 +400,11 @@ for trial in trials:
             trial_data[trial]["data_Normal.csv"]["y"]["successRatio"], 
             trial_data[trial]["data_Normal.csv"]["yErr"]["successRatio"], 
             trial_data[trial]["data_Normal.csv"]["y"]["networkImbalance"], 
-            trial_data[trial]["data_Normal.csv"]["yErr"]["networkImbalance"]
+            trial_data[trial]["data_Normal.csv"]["yErr"]["networkImbalance"], 
+            trial_data[trial]["data_Normal.csv"]["y"]["nsOfTxAbortBecauseLocked"], 
+            trial_data[trial]["data_Normal.csv"]["yErr"]["nsOfTxAbortBecauseLocked"], 
+            trial_data[trial]["data_Normal.csv"]["y"]["nsOfTxAbortBecauseNoFunds"], 
+            trial_data[trial]["data_Normal.csv"]["yErr"]["nsOfTxAbortBecauseNoFunds"]
         ], dtype=np.double)
         sorted_data = sort_on_first_row(all_no_rebalancing_data)
         
@@ -431,9 +443,29 @@ for trial in trials:
                 alpha=0.5
             )
 
-        ax2.set_xlabel("Time (s)")
         ax2.set_ylabel("Average network imbalance")
         ax2.grid()
+
+        for j in [5, 7]:
+            for i in range(len(dt)):
+                ax3.plot(
+                    dt[i][0, :], 
+                    dt[i][j, :],
+                    color=f'C{i}',
+                    linestyle='solid' if j == 5 else 'dashed'
+                )
+
+                ax3.fill_between(
+                    dt[i][0,:],
+                    dt[i][j,:] - dt[i][j+1,:],
+                    dt[i][j,:] + dt[i][j+1,:],
+                    alpha=0.5,
+                    color=f'C{i}'
+                )
+
+        ax3.set_xlabel("Time (s)")
+        ax3.set_ylabel("Number of transactions")
+        ax3.grid()
 
         fig.legend()
 

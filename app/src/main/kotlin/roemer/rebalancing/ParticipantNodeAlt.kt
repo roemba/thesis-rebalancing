@@ -60,6 +60,8 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, counter: Counter, rand
 
         logger.info("Starting to find participants with execution id: $executionId and participant id: $anonId")
 
+        if (this.algoSettings.randomizeChosenEdgesToInvite) this.paymentChannels.shuffle(this.random.random)
+
         for (channel in this.paymentChannels) {
             sendMessage(InviteParticipantMessage(
                 MessageTypes.INVITE_P, this, channel.getOppositeNode(this), channel, executionId!!, this.algoSettings.hopCount, this.algoSettings
@@ -108,6 +110,8 @@ open class ParticipantNodeAlt(id: Int, g: ChannelNetwork, counter: Counter, rand
         if (!this.invitesSend && mes.hopCount - 1 > 0 && (this.paymentChannels.size - deniedEdges.size) > 1) {
             this.invitesSend = true
             parentEdge = mes.channel
+            if (this.algoSettings.randomizeChosenEdgesToInvite) this.paymentChannels.shuffle(this.random.random)
+
             for (channel in this.paymentChannels) {
                 if (channel !== parentEdge && !(channel in deniedEdges)) {
                     sendMessage(InviteParticipantMessage(

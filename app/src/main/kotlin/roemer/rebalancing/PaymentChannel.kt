@@ -47,7 +47,7 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
         }
 
         if (!overrideLock && this.locked) {
-            throw IllegalStateException("Channel $this is locked and no override has been given")
+            throw ChannelLockedException("Channel $this is locked and no override has been given")
         }
 
         if (tx in pendingTransactions) {
@@ -66,7 +66,7 @@ class PaymentChannel(val node1: Node, val node2: Node, val edges: Array<DefaultW
         }
 
         if (newBalance1 < 0 || newBalance2 < 0) {
-            throw IllegalStateException("Channel $this has insufficient balance for the transaction $tx")
+            throw InsufficientFundsException("Channel $this has insufficient balance for the transaction $tx")
         }
 
         this.pendingBalance1 = newBalance1
