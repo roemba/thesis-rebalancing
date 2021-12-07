@@ -47,7 +47,7 @@ for trial in trials:
                     trial_data[trial][run]["xRuns"].append(settingParts[2])
                 elif trial == "STATIC_REBALANCING_COMPARISON":
                     trial_data[trial][run]["xRuns"].append(lineParts[1])
-                elif trial == "DYNAMIC_REBALANCING_COMPARISON":
+                elif "DYNAMIC_REBALANCING_COMPARISON" in trial:
                     trial_data[trial][run]["xRuns"].append(np.fromstring(lineParts[1], sep=","))
 
 
@@ -65,7 +65,7 @@ for trial in trials:
 
         minItems = 100000000
         minArr = None
-        if trial == "DYNAMIC_REBALANCING_COMPARISON":
+        if "DYNAMIC_REBALANCING_COMPARISON" in trial:
             for arr in trial_data[trial][run]["xRuns"]:
                 if arr.shape[0] < minItems:
                     minItems = arr.shape[0]
@@ -152,6 +152,7 @@ for trial in trials:
         ax1.legend()
 
         fig.savefig(f"{trial}_hopCount.pdf")
+        plt.close(fig)
 
         fig = plt.figure()
         ax1 = fig.subplots(1)
@@ -192,6 +193,7 @@ for trial in trials:
         ax1.legend(loc="upper left")
 
         fig.savefig(f"{trial}_maxNumberOfInvites.pdf")
+        plt.close(fig)
     elif trial == "SCORE_VS_PERC_LEADERS":
         fig = plt.figure()
         ax1 = fig.subplots(1)
@@ -239,6 +241,7 @@ for trial in trials:
         ax1.legend(loc="lower right")
 
         fig.savefig(f"{trial}_percentageLeaders_score.pdf")
+        plt.close(fig)
         
         fig = plt.figure()
         ax1 = fig.subplots(1)
@@ -268,6 +271,7 @@ for trial in trials:
         ax1.legend()
 
         fig.savefig(f"{trial}_percentageLeaders_mes.pdf")
+        plt.close(fig)
     elif trial == "STATIC_REBALANCING_COMPARISON":
         width = 0.35
 
@@ -345,6 +349,7 @@ for trial in trials:
         
         ax1.legend()
         fig.savefig(f"{trial}_static_comp_messages.pdf")
+        plt.close(fig)
 
         fig = plt.figure()
         ax1 = fig.subplots(1)
@@ -363,11 +368,12 @@ for trial in trials:
         
         ax1.legend()
         fig.savefig(f"{trial}_static_comp_time.pdf")
-    elif trial == "DYNAMIC_REBALANCING_COMPARISON":
+        plt.close(fig)
+    elif "DYNAMIC_REBALANCING_COMPARISON" in trial:
         print(trial_data[trial]["data_CoinWasher.csv"]["x"])
 
-        fig = plt.figure(figsize=(6, 8))
-        ax1, ax2, ax3 = fig.subplots(3, sharex=True)
+        fig = plt.figure()
+        ax1, ax2 = fig.subplots(2, sharex=True)
 
         all_coinwasher_data = np.array([
             trial_data[trial]["data_CoinWasher.csv"]["x"] / 1000, 
@@ -378,7 +384,9 @@ for trial in trials:
             trial_data[trial]["data_CoinWasher.csv"]["y"]["nsOfTxAbortBecauseLocked"], 
             trial_data[trial]["data_CoinWasher.csv"]["yErr"]["nsOfTxAbortBecauseLocked"], 
             trial_data[trial]["data_CoinWasher.csv"]["y"]["nsOfTxAbortBecauseNoFunds"], 
-            trial_data[trial]["data_CoinWasher.csv"]["yErr"]["nsOfTxAbortBecauseNoFunds"]
+            trial_data[trial]["data_CoinWasher.csv"]["yErr"]["nsOfTxAbortBecauseNoFunds"], 
+            trial_data[trial]["data_CoinWasher.csv"]["y"]["nsOfRebalancingInvocations"], 
+            trial_data[trial]["data_CoinWasher.csv"]["yErr"]["nsOfRebalancingInvocations"]
         ], dtype=np.double)
         sorted_data = sort_on_first_row(all_coinwasher_data)
 
@@ -391,7 +399,9 @@ for trial in trials:
             trial_data[trial]["data_Revive.csv"]["y"]["nsOfTxAbortBecauseLocked"], 
             trial_data[trial]["data_Revive.csv"]["yErr"]["nsOfTxAbortBecauseLocked"], 
             trial_data[trial]["data_Revive.csv"]["y"]["nsOfTxAbortBecauseNoFunds"], 
-            trial_data[trial]["data_Revive.csv"]["yErr"]["nsOfTxAbortBecauseNoFunds"]
+            trial_data[trial]["data_Revive.csv"]["yErr"]["nsOfTxAbortBecauseNoFunds"], 
+            trial_data[trial]["data_Revive.csv"]["y"]["nsOfRebalancingInvocations"], 
+            trial_data[trial]["data_Revive.csv"]["yErr"]["nsOfRebalancingInvocations"]
         ], dtype=np.double)
         sorted_data = sort_on_first_row(all_revive_data)
 
@@ -404,7 +414,9 @@ for trial in trials:
             trial_data[trial]["data_Normal.csv"]["y"]["nsOfTxAbortBecauseLocked"], 
             trial_data[trial]["data_Normal.csv"]["yErr"]["nsOfTxAbortBecauseLocked"], 
             trial_data[trial]["data_Normal.csv"]["y"]["nsOfTxAbortBecauseNoFunds"], 
-            trial_data[trial]["data_Normal.csv"]["yErr"]["nsOfTxAbortBecauseNoFunds"]
+            trial_data[trial]["data_Normal.csv"]["yErr"]["nsOfTxAbortBecauseNoFunds"], 
+            trial_data[trial]["data_Normal.csv"]["y"]["nsOfRebalancingInvocations"], 
+            trial_data[trial]["data_Normal.csv"]["yErr"]["nsOfRebalancingInvocations"]
         ], dtype=np.double)
         sorted_data = sort_on_first_row(all_no_rebalancing_data)
         
@@ -425,9 +437,10 @@ for trial in trials:
                 alpha=0.5
             )
 
-        ax1.set_xlim(0)
+        ax1.set_xlim(0, dt[i][0, -1])
         ax1.set_ylim(0, 1)
         ax1.set_ylabel("Success ratio")
+        ax2.set_xlabel("Time (s)")
         ax1.grid()
 
         for i in range(len(dt)):
@@ -446,30 +459,69 @@ for trial in trials:
         ax2.set_ylabel("Average network imbalance")
         ax2.grid()
 
-        for j in [5, 7]:
-            for i in range(len(dt)):
-                ax3.plot(
-                    dt[i][0, :], 
-                    dt[i][j, :],
-                    color=f'C{i}',
-                    linestyle='solid' if j == 5 else 'dashed'
-                )
-
-                ax3.fill_between(
-                    dt[i][0,:],
-                    dt[i][j,:] - dt[i][j+1,:],
-                    dt[i][j,:] + dt[i][j+1,:],
-                    alpha=0.5,
-                    color=f'C{i}'
-                )
-
-        ax3.set_xlabel("Time (s)")
-        ax3.set_ylabel("Number of transactions")
-        ax3.grid()
-
         fig.legend()
 
         fig.savefig(f"{trial}_success_ratio.pdf")
+        plt.close(fig)
+
+        fig = plt.figure()
+        ax1, ax2, ax3 = fig.subplots(3, sharex=True, sharey=True)
+        axes = [ax1, ax2, ax3]
+        
+        for i in range(len(dt)):
+            axes[i].stackplot(
+                dt[i][0, :], 
+                dt[i][5, :],
+                dt[i][7, :],
+                labels=['Aborted because locked', 'Aborted because no funds'] if i == 0 else []
+            )
+            axes[i].set_ylabel(labels[i])
+            axes[i].yaxis.set_label_position('right')
+            axes[i].grid()
+
+            maxErrorLocked = np.max(dt[i][6, :])
+            maxErrorNoFunds = np.max(dt[i][8, :])
+            print(f"StDev of {labels[i]} is locked: {maxErrorLocked} noFunds: {maxErrorNoFunds}")
+
+        ax1.set_xlim(0, dt[i][0, -1])
+        ax3.set_xlabel("Time (s)")
+        fig.supylabel("Number of aborted transactions")
+        ax1.set_ylim(0, 4500)
+        
+        
+        fig.legend()
+
+        fig.savefig(f"{trial}_nOfTransactions.pdf")
+        plt.close(fig)
+
+        fig = plt.figure()
+        ax1 = fig.subplots(1)
+        
+        for i in range(len(dt) - 1):
+            ax1.plot(
+                dt[i][0, :], 
+                dt[i][9, :],
+                label=labels[i]
+            )
+
+            ax1.fill_between(
+                dt[i][0,:],
+                dt[i][9,:] - dt[i][10,:],
+                dt[i][9,:] + dt[i][10,:],
+                alpha=0.5
+            )
+
+        ax1.set_xlim(0, dt[i][0, -1])
+        ax1.set_xlabel("Time (s)")
+        ax1.set_ylabel("Number of protocol invocations")
+        ax1.grid()
+        ax1.set_ylim(0)
+        
+        ax1.legend()
+
+        fig.savefig(f"{trial}_nOfRebalancingInvocations.pdf")
+        plt.close(fig)
+
 
 
 # trial_names = ["no_rebalancing", "coinwasher", "revive"]

@@ -10,7 +10,7 @@ import java.util.LinkedList
 import java.util.Queue
 import kotlin.math.abs
 
-open class Node(val id: Int, val g: ChannelNetwork, val counter: Counter,  val random: SeededRandom, val globalLogger: Logger) {
+open class Node(val id: Int, val g: ChannelNetwork, val counter: Counter,  val random: SeededRandom, val globalLogger: Logger, val rebalancingTriggerPoint: Float) {
     val paymentChannels: MutableList<PaymentChannel> = ArrayList()
     val ongoingPayments: MutableMap<Payment, LocalPayment> = HashMap()
     val logger = this.globalLogger.getNodeLogger(this)
@@ -32,8 +32,6 @@ open class Node(val id: Int, val g: ChannelNetwork, val counter: Counter,  val r
     var isRunningAlgo = false
     var rebalancingAwake = false
     var discoverAwake = false
-
-    val REBALANCING_TRIGGER_POINT = 0.2
 
     fun startPayment(payment: Payment): SimulationInput {
         if (payment.from != this) {
@@ -304,9 +302,9 @@ open class Node(val id: Int, val g: ChannelNetwork, val counter: Counter,  val r
     }
 
     fun checkIfRebalancingRequired() {
-        if (this.getGiniCoefficient() >= this.REBALANCING_TRIGGER_POINT) {
+        if (this.getGiniCoefficient() >= this.rebalancingTriggerPoint) {
             if (this.startStopDesc == null) {
-                logger.info("Started rebalancing because Gini coefficient above ${this.REBALANCING_TRIGGER_POINT}")
+                logger.info("Started rebalancing because Gini coefficient above ${this.rebalancingTriggerPoint}")
                 this.startStopDesc = StartDescription(Steps.Discover, this)
             } else {
                 logger.warn("Something else already reserved the startStopDesc!")

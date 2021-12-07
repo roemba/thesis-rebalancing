@@ -36,7 +36,7 @@ data class TagDemandHTLCPair(
     }
 }
 
-class CoinWasherNode(id: Int, g: ChannelNetwork, counter: Counter, random: SeededRandom, globalLogger: Logger) : ParticipantNodeAlt(id, g, counter, random, globalLogger), Rebalancer {
+class CoinWasherNode(id: Int, g: ChannelNetwork, counter: Counter, random: SeededRandom, globalLogger: Logger, rebalancingTriggerPoint: Float) : ParticipantNodeAlt(id, g, counter, random, globalLogger, rebalancingTriggerPoint), Rebalancer {
     val digest = MessageDigest.getInstance("SHA-256");
     
     // Needs to be reset every time the algorithm runs

@@ -61,13 +61,15 @@ fun main() {
     runBlocking(Dispatchers.Default) {
         for (trial in trials) {
             var runCounter = 0
-            for (seed in 0 until 2) {
+            for (seed in 0 until 10) {
                 val seedMutex = Mutex()
-                val dirName = "output_files/${trial}"
-                val dir = File(dirName)
+                var dirName = "output_files/${trial}"
+                if (trial != Trials.DYNAMIC_REBALANCING_COMPARISON) {
+                    val dir = File(dirName)
 
-                if (!dir.exists()) {
-                    dir.mkdirs()
+                    if (!dir.exists()) {
+                        dir.mkdirs()
+                    }
                 }
 
                 when (trial) {
@@ -142,17 +144,27 @@ fun main() {
                     } 
                     Trials.DYNAMIC_REBALANCING_COMPARISON -> {
                         val algoSettings = AlgoSettings(3, 3, 0.2F, true)
+                        for (giniCoefficient in listOf(0.225F)) {
+                            dirName = "output_files/${trial}_${giniCoefficient}"
+                            val dir = File(dirName)
 
-                        for (nodeType in listOf(NodeTypes.CoinWasher, NodeTypes.Revive, NodeTypes.Normal)) {
-                            val scoreFileName = "$dirName/data_${nodeType}.csv"
-                            val scoreMutex = Mutex()
-                            deleteFile(scoreFileName)
-
-                            launch {
-                                val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", nodeType, SeededRandom(seed), Counter(), false)
-                                
-                                graph.start(algoSettings, true, trial, false, scoreMutex, scoreFileName)
+                            if (!dir.exists()) {
+                                dir.mkdirs()
                             }
+                            runBlocking(Dispatchers.Default) {
+                                for (nodeType in listOf(NodeTypes.CoinWasher, NodeTypes.Revive, NodeTypes.Normal)) {
+                                    val scoreFileName = "${dirName}/data_${nodeType}.csv"
+                                    val scoreMutex = Mutex()
+                                    deleteFile(scoreFileName)
+
+                                    launch {
+                                        val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", nodeType, SeededRandom(seed), Counter(), false, giniCoefficient)
+                                        
+                                        graph.start(algoSettings, true, trial, false, scoreMutex, scoreFileName)
+                                    }
+                                }
+                            }
+
                         }
                     } 
                     else -> {
