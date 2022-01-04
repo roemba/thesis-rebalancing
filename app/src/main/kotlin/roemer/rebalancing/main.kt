@@ -15,7 +15,8 @@ enum class Trials {
     SCORE_VS_PERC_LEADERS,
     STATIC_REBALANCING_COMPARISON,
     DYNAMIC_REBALANCING_COMPARISON,
-    COINWASHER_PARAM
+    COINWASHER_PARAM,
+    ONE_ROUND_COINWASHER_NUMBER_OF_MESSAGES
 }
 
 fun main() {
@@ -55,9 +56,11 @@ fun main() {
         //Trials.PART_DISC,
         //Trials.SCORE_VS_PERC_LEADERS, 
         //Trials.STATIC_REBALANCING_COMPARISON,
-        Trials.DYNAMIC_REBALANCING_COMPARISON
+        Trials.DYNAMIC_REBALANCING_COMPARISON,
+        //Trials.ONE_ROUND_COINWASHER_NUMBER_OF_MESSAGES
     )
 
+    val statistics = Statistics()
     runBlocking(Dispatchers.Default) {
         for (trial in trials) {
             var runCounter = 0
@@ -166,7 +169,22 @@ fun main() {
                             }
 
                         }
-                    } 
+                    }
+                    Trials.ONE_ROUND_COINWASHER_NUMBER_OF_MESSAGES -> {
+                        val scoreFileName = "$dirName/one_round.csv"
+                        val scoreMutex = Mutex()
+                        deleteFile(scoreFileName)
+
+                        val algoSettings = AlgoSettings(3, 5, 0.0F, true)
+                        val counter = Counter()
+
+                        launch { 
+                            val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.CoinWasher, SeededRandom(seed), counter, false)
+                            graph.start(algoSettings, false, trial, true, scoreMutex, scoreFileName) 
+                            println("$seed - Finished $algoSettings")
+                            statistics.process(counter)
+                        }
+                    }  
                     else -> {
                         val algoSettings = AlgoSettings(3, 5, 1F, true)
                         launch { 
@@ -181,6 +199,7 @@ fun main() {
     }
 
     // LpSolveDemo().demo()
+    statistics.printStatistics()
 }
 
 val alreadyTriedDeleting: MutableSet<String> = HashSet()

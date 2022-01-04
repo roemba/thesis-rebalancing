@@ -2,15 +2,15 @@ package roemer.rebalancing
 
 import kotlin.math.pow
 import kotlin.math.sqrt
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class Counter {
     val messageCounters: MutableMap<MessageTypes, Int> = HashMap()
     var nOfCycles: Int = 0
 
     fun countMessage(mes: Message) {
-        var count = messageCounters.getOrPut(mes.type) { 0 }
-        count++
-        messageCounters[mes.type] = count
+        messageCounters[mes.type] = messageCounters.getOrPut(mes.type) { 0 } + 1
     }
 
     fun countOwnedCycles(nOfOwnedCycles: Int) {
@@ -47,17 +47,20 @@ class Statistics {
     val runSums: MutableMap<MessageTypes, Int> = HashMap()
 
     val runNOfCycles: MutableList<Int> = ArrayList()
+    val processMutex = Mutex()
 
-    fun process(counter: Counter) {
-        for ((key, value) in counter.messageCounters.entries) {
-            val runCounter = this.runCounters.getOrPut(key, { ArrayList() })
-            val runSum = this.runSums.getOrPut(key, { 0 })
-            
-            runCounter += value
-            this.runSums[key] = runSum + value
+    suspend fun process(counter: Counter) {
+        this.processMutex.withLock {
+            for ((key, value) in counter.messageCounters.entries) {
+                val runCounter = this.runCounters.getOrPut(key, { ArrayList() })
+                val runSum = this.runSums.getOrPut(key, { 0 })
+                
+                runCounter += value
+                this.runSums[key] = runSum + value
+            }
+
+            this.runNOfCycles += counter.nOfCycles
         }
-
-        this.runNOfCycles += counter.nOfCycles
     }
 
     private fun printIntCollectionStatistics(name: String, list: Collection<Int>) {
