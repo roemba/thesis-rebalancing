@@ -35,7 +35,7 @@ class NodeLogger (val id: Int, val parent: Logger): Logger() {
             round = "R${v.roundIndex}:"
         }
 
-        if (true || (v != null && v.id in arrayOf(84, 2834, 8414, 4597, 1121) && v is CoinWasherNode)) {
+        if (true) { // || (v != null && v.id in arrayOf(2019, 5288, 422) && v is CoinWasherNode)) {
             super.logAtTime("$round $v - $s", l, this.parent.time)
         }
     }
@@ -44,7 +44,7 @@ class NodeLogger (val id: Int, val parent: Logger): Logger() {
 
 open class Logger {
     var time = 0L
-    val logLevel = LogLevel.ERROR
+    val logLevel = LogLevel.DEBUG
     val ANSI_RESET = "\u001B[0m"
     
     fun getNodeLogger (vertex: Node): NodeLogger {

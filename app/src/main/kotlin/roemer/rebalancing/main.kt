@@ -55,8 +55,8 @@ fun main() {
         //Trials.NO_REBALANCING,
         //Trials.PART_DISC,
         //Trials.SCORE_VS_PERC_LEADERS, 
-        //Trials.STATIC_REBALANCING_COMPARISON,
-        Trials.DYNAMIC_REBALANCING_COMPARISON,
+        Trials.STATIC_REBALANCING_COMPARISON,
+        //Trials.DYNAMIC_REBALANCING_COMPARISON,
         //Trials.ONE_ROUND_COINWASHER_NUMBER_OF_MESSAGES
     )
 
@@ -64,7 +64,7 @@ fun main() {
     runBlocking(Dispatchers.Default) {
         for (trial in trials) {
             var runCounter = 0
-            for (seed in 0 until 10) {
+            for (seed in 1 until 2) {
                 val seedMutex = Mutex()
                 var dirName = "output_files/${trial}"
                 if (trial != Trials.DYNAMIC_REBALANCING_COMPARISON) {
@@ -125,13 +125,13 @@ fun main() {
 
                     }
                     Trials.STATIC_REBALANCING_COMPARISON -> {
-                        val algoSettings = AlgoSettings(3, 10, 0.2F, false)
-                        for (graphName in listOf("difficult_graph.txt", "complete_graph.txt", "lightning")) {
+                        val algoSettings = AlgoSettings(99, 99, 1.0F, true)
+                        for (graphName in listOf("simple_graph.txt")) {
                             val scoreFileName = "$dirName/score_$graphName.csv"
                             val scoreMutex = Mutex()
                             deleteFile(scoreFileName)
 
-                            for (nodeType in listOf(NodeTypes.CoinWasher, NodeTypes.Revive)) {
+                            for (nodeType in listOf(NodeTypes.CoinWasher)) {
                                 launch {
                                     var graph: GraphHolder
                                     if (graphName == "lightning") {
@@ -140,7 +140,7 @@ fun main() {
                                         graph = GraphHolder.createGraphHolderFromTxtGraph(graphName, nodeType, SeededRandom(seed), Counter())
                                     }
                                     
-                                    graph.start(algoSettings, false, trial, false, scoreMutex, scoreFileName)
+                                    graph.start(algoSettings, false, trial, true, scoreMutex, scoreFileName)
                                 }
                             }
                         }
