@@ -1,4 +1,4 @@
-package roemer.rebalancing
+package anon.rebalancing
 
 import kotlin.random.Random
 import java.util.UUID

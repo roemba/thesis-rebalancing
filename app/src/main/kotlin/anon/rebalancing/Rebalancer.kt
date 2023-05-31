@@ -1,4 +1,4 @@
-package roemer.rebalancing
+package anon.rebalancing
 
 interface Rebalancer {
     fun startSubAlgos(algoSettings: AlgoSettings): SimulationInput?

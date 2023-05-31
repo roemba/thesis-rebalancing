@@ -1,4 +1,4 @@
-package roemer.rebalancing
+package anon.rebalancing
 
 import java.util.UUID
 import java.security.MessageDigest
@@ -36,7 +36,7 @@ data class TagDemandHTLCPair(
     }
 }
 
-class CoinWasherNode(id: Int, g: ChannelNetwork, counter: Counter, random: SeededRandom, globalLogger: Logger, rebalancingTriggerPoint: Float) : ParticipantNodeAlt(id, g, counter, random, globalLogger, rebalancingTriggerPoint), Rebalancer {
+class HopeNode(id: Int, g: ChannelNetwork, counter: Counter, random: SeededRandom, globalLogger: Logger, rebalancingTriggerPoint: Float) : ParticipantNodeAlt(id, g, counter, random, globalLogger, rebalancingTriggerPoint), Rebalancer {
     val digest = MessageDigest.getInstance("SHA-256");
     
     // Needs to be reset every time the algorithm runs
@@ -761,7 +761,7 @@ class CoinWasherNode(id: Int, g: ChannelNetwork, counter: Counter, random: Seede
     }
 
     fun getRoundStarterAsNode(): Node? {
-        return g.graph.vertexSet().filter {v -> (v as CoinWasherNode).anonId == this.getRoundStarter()} .firstOrNull()
+        return g.graph.vertexSet().filter {v -> (v as HopeNode).anonId == this.getRoundStarter()} .firstOrNull()
     }
 
     fun iStartedRound(): Boolean {

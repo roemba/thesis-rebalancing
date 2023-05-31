@@ -1,4 +1,4 @@
-package roemer.rebalancing
+package anon.rebalancing
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
@@ -9,7 +9,7 @@ import com.fasterxml.jackson.core.type.TypeReference
 import java.io.File
 import org.jgrapht.alg.connectivity.KosarajuStrongConnectivityInspector
 import org.jgrapht.graph.DefaultWeightedEdge
-import roemer.revive.ReviveNode
+import anon.revive.ReviveNode
 
 import org.apache.commons.math3.distribution.ExponentialDistribution
 
@@ -47,7 +47,7 @@ class TopologyTranslator (val nodeFileName: String, val channelFileName: String,
             }
 
             val n = when (this.nodeType) {
-                NodeTypes.CoinWasher -> CoinWasherNode(i, g, counter, this.random, this.logger, this.rebalancingTriggerPoint)
+                NodeTypes.Hope -> HopeNode(i, g, counter, this.random, this.logger, this.rebalancingTriggerPoint)
                 NodeTypes.Revive -> ReviveNode(i, g, counter, this.random, this.logger, this.rebalancingTriggerPoint)
                 NodeTypes.ParticipantDisc -> ParticipantNodeAlt(i, g, counter, this.random, this.logger, this.rebalancingTriggerPoint)
                 NodeTypes.Normal -> Node(i, g, counter, this.random, this.logger, this.rebalancingTriggerPoint)

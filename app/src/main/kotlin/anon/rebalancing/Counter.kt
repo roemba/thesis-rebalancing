@@ -1,4 +1,4 @@
-package roemer.rebalancing
+package anon.rebalancing
 
 import kotlin.math.pow
 import kotlin.math.sqrt

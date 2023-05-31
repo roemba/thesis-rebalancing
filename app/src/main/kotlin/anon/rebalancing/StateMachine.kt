@@ -1,4 +1,4 @@
-package roemer.rebalancing
+package anon.rebalancing
 
 class StateMachine<T : Enum<T>> (val logger: NodeLogger, startState: T) {
     var state = startState

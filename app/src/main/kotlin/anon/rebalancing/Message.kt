@@ -1,4 +1,4 @@
-package roemer.rebalancing
+package anon.rebalancing
 
 import org.jgrapht.GraphPath
 import org.jgrapht.graph.DefaultWeightedEdge

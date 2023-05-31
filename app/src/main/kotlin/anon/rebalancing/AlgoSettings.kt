@@ -1,4 +1,4 @@
-package roemer.rebalancing
+package anon.rebalancing
 
 data class AlgoSettings (
     val hopCount: Int,

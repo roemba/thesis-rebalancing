@@ -1,12 +1,12 @@
-package roemer.revive
+package anon.revive
 
-import roemer.rebalancing.Message
-import roemer.rebalancing.MessageTypes
-import roemer.rebalancing.PaymentChannel
-import roemer.rebalancing.Node
-import roemer.rebalancing.Tag
-import roemer.rebalancing.Payment
-import roemer.rebalancing.ChannelTransaction
+import anon.rebalancing.Message
+import anon.rebalancing.MessageTypes
+import anon.rebalancing.PaymentChannel
+import anon.rebalancing.Node
+import anon.rebalancing.Tag
+import anon.rebalancing.Payment
+import anon.rebalancing.ChannelTransaction
 
 open class ReviveMessage(
     type: MessageTypes,

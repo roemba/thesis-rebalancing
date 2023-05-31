@@ -1,4 +1,4 @@
-package roemer.rebalancing
+package anon.rebalancing
 
 import java.security.MessageDigest
 import kotlin.math.ceil

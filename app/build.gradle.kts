@@ -5,7 +5,7 @@ plugins {
     application
 }
 
-group = "me.roemer"
+group = "me.anon"
 version = "1.0-SNAPSHOT"
 val arguments: MutableList<String> = ArrayList()
 arguments.add("-ea")
@@ -32,7 +32,7 @@ dependencies {
 }
 
 application {
-    mainClass.set("roemer.rebalancing.MainKt")
+    mainClass.set("anon.rebalancing.MainKt")
     applicationDefaultJvmArgs = arguments
 }
 

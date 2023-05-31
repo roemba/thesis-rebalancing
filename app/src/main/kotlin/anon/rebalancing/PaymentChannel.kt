@@ -1,4 +1,4 @@
-package roemer.rebalancing
+package anon.rebalancing
 
 import java.lang.IllegalArgumentException
 import org.jgrapht.graph.DefaultWeightedEdge

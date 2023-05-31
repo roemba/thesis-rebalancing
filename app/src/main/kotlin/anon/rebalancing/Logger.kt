@@ -1,4 +1,4 @@
-package roemer.rebalancing
+package anon.rebalancing
 
 enum class LogLevel {
     DEBUG, INFO, WARN, ERROR
@@ -31,11 +31,11 @@ class NodeLogger (val id: Int, val parent: Logger): Logger() {
         val v = this.vertex
 
         var round = ""
-        if (v != null && v is CoinWasherNode) {
+        if (v != null && v is HopeNode) {
             round = "R${v.roundIndex}:"
         }
 
-        if (true) { // || (v != null && v.id in arrayOf(2019, 5288, 422) && v is CoinWasherNode)) {
+        if (true) { // || (v != null && v.id in arrayOf(2019, 5288, 422) && v is HopeNode)) {
             super.logAtTime("$round $v - $s", l, this.parent.time)
         }
     }

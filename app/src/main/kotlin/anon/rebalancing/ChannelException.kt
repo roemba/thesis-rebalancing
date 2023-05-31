@@ -1,4 +1,4 @@
-package roemer.rebalancing
+package anon.rebalancing
 
 open class ChannelException (message: String): Exception(message) {}
 

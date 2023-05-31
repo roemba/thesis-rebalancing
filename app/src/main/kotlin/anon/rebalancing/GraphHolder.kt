@@ -1,4 +1,4 @@
-package roemer.rebalancing
+package anon.rebalancing
 
 import java.io.File
 import java.io.PrintWriter
@@ -16,14 +16,14 @@ import guru.nidi.graphviz.model.Factory.node as GraphVizNode
 import guru.nidi.graphviz.model.Factory.to as GraphTo
 import guru.nidi.graphviz.engine.Graphviz
 import guru.nidi.graphviz.engine.Format
-import roemer.revive.ReviveNode
+import anon.revive.ReviveNode
 import org.jgrapht.graph.DefaultWeightedEdge
 import org.apache.commons.math3.distribution.ExponentialDistribution
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 enum class NodeTypes {
-    ParticipantDisc, CoinWasher, Revive, Normal
+    ParticipantDisc, Hope, Revive, Normal
 }
 
 enum class Steps {
@@ -61,7 +61,7 @@ class GraphHolder (
             val nodes: MutableList<Node> = ArrayList()
             for (i in 0 until nOfNodes) {
                 val n = when (nodeType) {
-                    NodeTypes.CoinWasher -> CoinWasherNode(i, g, counter, random, logger, rebalancingTriggerPoint)
+                    NodeTypes.Hope -> HopeNode(i, g, counter, random, logger, rebalancingTriggerPoint)
                     NodeTypes.Revive -> ReviveNode(i, g, counter, random, logger, rebalancingTriggerPoint)
                     NodeTypes.ParticipantDisc -> ParticipantNodeAlt(i, g, counter, random, logger, rebalancingTriggerPoint)
                     NodeTypes.Normal -> Node(i, g, counter, random, logger, rebalancingTriggerPoint)
@@ -177,7 +177,7 @@ class GraphHolder (
                         }
                         Steps.Rebalance -> {
                             when (this.nodeType) {
-                                NodeTypes.CoinWasher, NodeTypes.Revive -> {
+                                NodeTypes.Hope, NodeTypes.Revive -> {
                                     nOfRebalancingInvocations++
                                     (event.desc.recipient as Rebalancer).rebalance(event)
                                 }

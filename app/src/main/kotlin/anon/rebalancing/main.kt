@@ -1,6 +1,6 @@
-package roemer.rebalancing
+package anon.rebalancing
 
-import roemer.revive.LpSolveDemo
+import anon.revive.LpSolveDemo
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -15,8 +15,8 @@ enum class Trials {
     SCORE_VS_PERC_LEADERS,
     STATIC_REBALANCING_COMPARISON,
     DYNAMIC_REBALANCING_COMPARISON,
-    COINWASHER_PARAM,
-    ONE_ROUND_COINWASHER_NUMBER_OF_MESSAGES
+    HOPE_PARAM,
+    ONE_ROUND_HOPE_NUMBER_OF_MESSAGES
 }
 
 fun main() {
@@ -32,8 +32,8 @@ fun main() {
     // val statistics = Statistics()
     // for (i in 9 until 10) {
     //     val counter = Counter()
-    //     //val graph = GraphHolder.createGraphHolderFromTxtGraph("complete_graph.txt", NodeTypes.CoinWasher, SeededRandom(i), counter)
-    //     val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.CoinWasher, SeededRandom(i), counter, false)
+    //     //val graph = GraphHolder.createGraphHolderFromTxtGraph("complete_graph.txt", NodeTypes.Hope, SeededRandom(i), counter)
+    //     val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.Hope, SeededRandom(i), counter, false)
 
     //     val algoSettings = AlgoSettings(3, 10, 0.5F)
         
@@ -46,7 +46,7 @@ fun main() {
 
     // statistics.printStatistics()
     
-    // // val graph = GraphHolder("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.CoinWasher)
+    // // val graph = GraphHolder("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.Hope)
 
     
     // return
@@ -57,7 +57,7 @@ fun main() {
         //Trials.SCORE_VS_PERC_LEADERS, 
         Trials.STATIC_REBALANCING_COMPARISON,
         //Trials.DYNAMIC_REBALANCING_COMPARISON,
-        //Trials.ONE_ROUND_COINWASHER_NUMBER_OF_MESSAGES
+        //Trials.ONE_ROUND_HOPE_NUMBER_OF_MESSAGES
     )
 
     val statistics = Statistics()
@@ -116,7 +116,7 @@ fun main() {
                             for (percentageLeader in listOf(0.01F, 0.05F, 0.1F, 0.15F,0.2F, 0.4F, 0.6F, 0.8F, 1.0F)) {
                                 val algoSettings = AlgoSettings(3, maxNumberOfInvites, percentageLeader, false)
                                 launch { 
-                                    val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.CoinWasher, SeededRandom(seed), Counter(), false)
+                                    val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.Hope, SeededRandom(seed), Counter(), false)
                                     graph.start(algoSettings, false, trial, false, scoreMutex, scoreFileName)
                                     println("$seed - Finished $algoSettings")
                                 }
@@ -131,7 +131,7 @@ fun main() {
                             val scoreMutex = Mutex()
                             deleteFile(scoreFileName)
 
-                            for (nodeType in listOf(NodeTypes.CoinWasher)) {
+                            for (nodeType in listOf(NodeTypes.Hope)) {
                                 launch {
                                     var graph: GraphHolder
                                     if (graphName == "lightning") {
@@ -155,7 +155,7 @@ fun main() {
                                 dir.mkdirs()
                             }
                             runBlocking(Dispatchers.Default) {
-                                for (nodeType in listOf(NodeTypes.CoinWasher, NodeTypes.Revive, NodeTypes.Normal)) {
+                                for (nodeType in listOf(NodeTypes.Hope, NodeTypes.Revive, NodeTypes.Normal)) {
                                     val scoreFileName = "${dirName}/data_${nodeType}.csv"
                                     val scoreMutex = Mutex()
                                     deleteFile(scoreFileName)
@@ -170,7 +170,7 @@ fun main() {
 
                         }
                     }
-                    Trials.ONE_ROUND_COINWASHER_NUMBER_OF_MESSAGES -> {
+                    Trials.ONE_ROUND_HOPE_NUMBER_OF_MESSAGES -> {
                         val scoreFileName = "$dirName/one_round.csv"
                         val scoreMutex = Mutex()
                         deleteFile(scoreFileName)
@@ -179,7 +179,7 @@ fun main() {
                         val counter = Counter()
 
                         launch { 
-                            val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.CoinWasher, SeededRandom(seed), counter, false)
+                            val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.Hope, SeededRandom(seed), counter, false)
                             graph.start(algoSettings, false, trial, true, scoreMutex, scoreFileName) 
                             println("$seed - Finished $algoSettings")
                             statistics.process(counter)
@@ -188,7 +188,7 @@ fun main() {
                     else -> {
                         val algoSettings = AlgoSettings(3, 5, 1F, true)
                         launch { 
-                            val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.CoinWasher, SeededRandom(seed), Counter(), true)
+                            val graph = GraphHolder.createGraphHolderFromLightningTopology("nodes_05-05-2021.json", "channels_05-05-2021.json", NodeTypes.Hope, SeededRandom(seed), Counter(), true)
                             graph.start(algoSettings, true, trial, true, seedMutex, "output_files/lalala.csv") 
                         }
                     }

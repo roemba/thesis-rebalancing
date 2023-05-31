@@ -1,4 +1,4 @@
-package roemer.rebalancing
+package anon.rebalancing
 
 import org.apache.commons.math3.distribution.ExponentialDistribution
 import kotlin.math.ceil

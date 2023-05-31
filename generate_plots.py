@@ -279,7 +279,7 @@ for trial in trials:
         ax1 = fig.subplots(1)
         
         proto_types = trial_data[trial]["score_complete_graph.txt.csv"]["x"]
-        proto_types[np.where(proto_types == "CoinWasher")] = "Our protocol"
+        proto_types[np.where(proto_types == "Hope")] = "Our protocol"
 
         y_all = np.array([
             trial_data[trial]["score_complete_graph.txt.csv"]["y"]["totalDemandsMet"],  
@@ -370,25 +370,25 @@ for trial in trials:
         fig.savefig(f"{trial}_static_comp_time.pdf")
         plt.close(fig)
     elif "DYNAMIC_REBALANCING_COMPARISON" in trial:
-        print(trial_data[trial]["data_CoinWasher.csv"]["x"])
+        print(trial_data[trial]["data_Hope.csv"]["x"])
 
         fig = plt.figure()
         ax1, ax2 = fig.subplots(2, sharex=True)
 
-        all_coinwasher_data = np.array([
-            trial_data[trial]["data_CoinWasher.csv"]["x"] / 1000, 
-            trial_data[trial]["data_CoinWasher.csv"]["y"]["successRatio"], 
-            trial_data[trial]["data_CoinWasher.csv"]["yErr"]["successRatio"], 
-            trial_data[trial]["data_CoinWasher.csv"]["y"]["networkImbalance"], 
-            trial_data[trial]["data_CoinWasher.csv"]["yErr"]["networkImbalance"], 
-            trial_data[trial]["data_CoinWasher.csv"]["y"]["nsOfTxAbortBecauseLocked"], 
-            trial_data[trial]["data_CoinWasher.csv"]["yErr"]["nsOfTxAbortBecauseLocked"], 
-            trial_data[trial]["data_CoinWasher.csv"]["y"]["nsOfTxAbortBecauseNoFunds"], 
-            trial_data[trial]["data_CoinWasher.csv"]["yErr"]["nsOfTxAbortBecauseNoFunds"], 
-            trial_data[trial]["data_CoinWasher.csv"]["y"]["nsOfRebalancingInvocations"], 
-            trial_data[trial]["data_CoinWasher.csv"]["yErr"]["nsOfRebalancingInvocations"]
+        all_hope_data = np.array([
+            trial_data[trial]["data_Hope.csv"]["x"] / 1000, 
+            trial_data[trial]["data_Hope.csv"]["y"]["successRatio"], 
+            trial_data[trial]["data_Hope.csv"]["yErr"]["successRatio"], 
+            trial_data[trial]["data_Hope.csv"]["y"]["networkImbalance"], 
+            trial_data[trial]["data_Hope.csv"]["yErr"]["networkImbalance"], 
+            trial_data[trial]["data_Hope.csv"]["y"]["nsOfTxAbortBecauseLocked"], 
+            trial_data[trial]["data_Hope.csv"]["yErr"]["nsOfTxAbortBecauseLocked"], 
+            trial_data[trial]["data_Hope.csv"]["y"]["nsOfTxAbortBecauseNoFunds"], 
+            trial_data[trial]["data_Hope.csv"]["yErr"]["nsOfTxAbortBecauseNoFunds"], 
+            trial_data[trial]["data_Hope.csv"]["y"]["nsOfRebalancingInvocations"], 
+            trial_data[trial]["data_Hope.csv"]["yErr"]["nsOfRebalancingInvocations"]
         ], dtype=np.double)
-        sorted_data = sort_on_first_row(all_coinwasher_data)
+        sorted_data = sort_on_first_row(all_hope_data)
 
         all_revive_data = np.array([
             trial_data[trial]["data_Revive.csv"]["x"] / 1000, 
@@ -420,7 +420,7 @@ for trial in trials:
         ], dtype=np.double)
         sorted_data = sort_on_first_row(all_no_rebalancing_data)
         
-        dt = [all_coinwasher_data, all_revive_data, all_no_rebalancing_data]
+        dt = [all_hope_data, all_revive_data, all_no_rebalancing_data]
         labels = ["Our protocol", "Revive", "No rebalancing"]
 
         for i in range(len(dt)):
@@ -524,7 +524,7 @@ for trial in trials:
 
 
 
-# trial_names = ["no_rebalancing", "coinwasher", "revive"]
+# trial_names = ["no_rebalancing", "hope", "revive"]
 # arr_per_trial = {}
 
 # for name in trial_names:

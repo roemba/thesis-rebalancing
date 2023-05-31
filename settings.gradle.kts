@@ -1,2 +1,2 @@
-rootProject.name = "thesis-rebalancing"
+rootProject.name = "hope-rebalancing"
 include("app")
